@@ -1,0 +1,36 @@
+{
+	"schemaVersion": 1,
+	"id": "blue_student",
+	"version": "${version}",
+	"name": "Blue Student",
+	"description": "Summon student companions and revive them via a linked bed.",
+	"authors": [
+		"LichtMeilleur"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/FabricMC/fabric-example-mod"
+	},
+	"license": "ARR",
+	"icon": "assets/blue_student/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.licht_meilleur.blue_student.BlueStudentMod"
+		],
+		"client": [
+			"com.licht_meilleur.blue_student.BlueStudentClient"
+		]
+	},
+
+	"depends": {
+		"fabricloader": ">=0.18.6",
+		"minecraft": "~26.1.1",
+		"java": ">=25",
+		"fabric-api": "*",
+		"geckolib": "*"
+	},
+	"suggests": {
+		"another-mod": "*"
+	}
+}
