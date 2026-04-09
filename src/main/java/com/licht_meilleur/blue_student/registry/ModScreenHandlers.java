@@ -7,11 +7,9 @@ import com.licht_meilleur.blue_student.inventory.CraftChamberScreenHandler;
 import com.licht_meilleur.blue_student.inventory.StudentMenuData;
 import com.licht_meilleur.blue_student.inventory.StudentScreenHandler;
 import com.licht_meilleur.blue_student.student.IStudentEntity;
-import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerType;
-import net.minecraft.core.BlockPos;
+import net.fabricmc.fabric.api.menu.v1.ExtendedMenuType;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.MenuType;
@@ -30,54 +28,47 @@ public class ModScreenHandlers {
         STUDENT_MENU = Registry.register(
                 Registries.MENU,
                 BlueStudentMod.id("student_menu"),
-                new ExtendedScreenHandlerType<>(
+                new ExtendedMenuType<StudentScreenHandler>(
                         ModScreenHandlers::createStudent,
-                        PacketCodec.tuple(
-                                PacketCodec.VAR_INT,
-                                StudentMenuData::entityId,
-                                StudentMenuData::new
-                        )
+                        StudentMenuData.STREAM_CODEC
                 )
         );
 
         CRAFT_CHAMBER_MENU = Registry.register(
                 Registries.MENU,
                 BlueStudentMod.id("craft_chamber_menu"),
-                new ExtendedScreenHandlerType<>(
+                new ExtendedMenuType<CraftChamberScreenHandler>(
                         ModScreenHandlers::createCraftChamber,
-                        PacketCodec.tuple(
-                                BlockPos.PACKET_CODEC,
-                                CraftChamberMenuData::pos,
-                                CraftChamberMenuData::new
-                        )
+                        CraftChamberMenuData.STREAM_CODEC
                 )
         );
     }
 
     private static StudentScreenHandler createStudent(int syncId, Inventory inv, StudentMenuData data) {
-        int entityId = data.entityId();
-        var world = inv.player.level();
+        var player = inv.player;
+        var level = player.level();
 
-        IStudentEntity e = null;
-        var raw = world.getEntity(entityId);
+        IStudentEntity student = null;
+        var raw = level.getEntity(data.entityId());
         if (raw instanceof IStudentEntity se) {
-            e = se;
+            student = se;
         }
 
         return new StudentScreenHandler(
                 syncId,
                 inv,
-                e,
+                student,
                 new SimpleContainer(9),
                 new SimpleContainer(1)
         );
     }
 
     private static CraftChamberScreenHandler createCraftChamber(int syncId, Inventory inv, CraftChamberMenuData data) {
-        var world = inv.player.level();
+        var player = inv.player;
+        var level = player.level();
 
         CraftChamberBlockEntity be = null;
-        var raw = world.getBlockEntity(data.pos());
+        var raw = level.getBlockEntity(data.pos());
         if (raw instanceof CraftChamberBlockEntity cc) {
             be = cc;
         }
