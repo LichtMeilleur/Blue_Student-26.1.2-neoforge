@@ -1,42 +1,30 @@
 package com.licht_meilleur.blue_student.client.block;
 
+import com.geckolib.model.GeoModel;
+import com.geckolib.renderer.base.GeoRenderState;
 import com.licht_meilleur.blue_student.BlueStudentMod;
-import com.licht_meilleur.blue_student.block.OnlyBedBlock;
 import com.licht_meilleur.blue_student.block.entity.OnlyBedBlockEntity;
-import com.licht_meilleur.blue_student.student.StudentId;
-import net.minecraft.util.Identifier;
-import software.bernie.geckolib.model.GeoModel;
+import net.minecraft.resources.Identifier;
 
 public class OnlyBedModel extends GeoModel<OnlyBedBlockEntity> {
 
     @Override
-    public Identifier getModelResource(OnlyBedBlockEntity animatable) {
-        return BlueStudentMod.id("geo/only_for_bed.geo.json");
+    public Identifier getModelResource(GeoRenderState renderState) {
+        return BlueStudentMod.id("only_for_bed");
     }
 
     @Override
     public Identifier getAnimationResource(OnlyBedBlockEntity animatable) {
-        return BlueStudentMod.id("animations/only_for_bed.animation.json");
+        return BlueStudentMod.id("only_for_bed");
     }
 
     @Override
-    public Identifier getTextureResource(OnlyBedBlockEntity animatable) {
-        // BlockStateから student を読む
-        var state = animatable.getCachedState();
-        StudentId id = (state != null && state.contains(OnlyBedBlock.STUDENT))
-                ? state.get(OnlyBedBlock.STUDENT)
-                : StudentId.SHIROKO;
+    public Identifier getTextureResource(GeoRenderState renderState) {
+        String path = renderState.getOrDefaultGeckolibData(
+                OnlyBedRenderTickets.BED_TEXTURE_PATH,
+                "textures/entity/shiroko_bed.png"
+        );
 
-        // ★ファイル名はスペース禁止：shiroko_bed.png などにしておく
-        return switch (id) {
-            case SHIROKO -> BlueStudentMod.id("textures/entity/shiroko_bed.png");
-            case HOSHINO -> BlueStudentMod.id("textures/entity/hoshino_bed.png");
-            case HINA    -> BlueStudentMod.id("textures/entity/hina_bed.png");
-            case ALICE   -> BlueStudentMod.id("textures/entity/alice_bed.png");
-            case KISAKI  -> BlueStudentMod.id("textures/entity/kisaki_bed.png");
-            case MARIE  -> BlueStudentMod.id("textures/entity/marie_bed.png");
-            case HIKARI  -> BlueStudentMod.id("textures/entity/hikari_bed.png");
-            case NOZOMI  -> BlueStudentMod.id("textures/entity/nozomi_bed.png");
-        };
+        return BlueStudentMod.id(path);
     }
 }

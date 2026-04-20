@@ -3,42 +3,36 @@ package com.licht_meilleur.blue_student.ai;
 import com.licht_meilleur.blue_student.entity.AbstractStudentEntity;
 import com.licht_meilleur.blue_student.student.IStudentEntity;
 import com.licht_meilleur.blue_student.student.StudentAiMode;
-import net.minecraft.entity.ai.goal.Goal;
-import net.minecraft.entity.mob.PathAwareEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.PathfinderMob;
+import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.EnumSet;
 
 public class StudentReturnToOwnerGoal extends Goal {
 
-    private final PathAwareEntity mob;
+    private final PathfinderMob mob;
     private final IStudentEntity student;
     private final double speed;
 
-    // 距離トリガー（25〜30ブロ推奨）
     private final double triggerDist;
     private final double stopDist;
-
-    // テレポ救済距離
     private final double teleportDistSq;
 
-    // 詰まり検知
     private final int stuckTriggerTicks;
-    private final double stuckMoveEpsSq = 0.0025; // 0.05m^2
 
-    private PlayerEntity owner;
+    private Player owner;
 
     private int repathCooldown = 0;
     private static final int REPATH_INTERVAL = 10;
 
-    // 詰まり用
-    private Vec3d lastPos = Vec3d.ZERO;
+    private Vec3 lastPos = Vec3.ZERO;
     private int noMoveTicks = 0;
 
     public StudentReturnToOwnerGoal(
-            PathAwareEntity mob, IStudentEntity student,
+            PathfinderMob mob, IStudentEntity student,
             double speed,
             double triggerDist, double stopDist,
             double teleportDist,
@@ -52,45 +46,37 @@ public class StudentReturnToOwnerGoal extends Goal {
         this.teleportDistSq = teleportDist * teleportDist;
         this.stuckTriggerTicks = stuckTriggerTicks;
 
-        // ★MOVEだけ（LOOKは握らない：ムーンウォーク対策）
-        this.setControls(EnumSet.of(Control.MOVE));
+        this.setFlags(EnumSet.of(Flag.MOVE));
     }
 
     @Override
-    public boolean canStart() {
-        // FOLLOW以外では動かさない（SECURITY含む）
+    public boolean canUse() {
         if (student.getAiMode() != StudentAiMode.FOLLOW) return false;
 
         owner = resolveOwner();
         if (owner == null || !owner.isAlive()) return false;
 
-        double dist2 = mob.squaredDistanceTo(owner);
+        double dist2 = mob.distanceToSqr(owner);
 
-        // ①遠いなら確実に発火
         if (dist2 > triggerDist * triggerDist) return true;
 
-        // ②詰まり検知：近すぎる時は誤爆しやすいので3ブロ以上離れてる時だけ
         updateStuckCounter();
-        if (dist2 > 9.0 && noMoveTicks >= stuckTriggerTicks) return true;
-
-        return false;
+        return dist2 > 9.0 && noMoveTicks >= stuckTriggerTicks;
     }
 
     @Override
-    public boolean shouldContinue() {
+    public boolean canContinueToUse() {
         if (student.getAiMode() != StudentAiMode.FOLLOW) return false;
         if (owner == null || !owner.isAlive()) return false;
 
         updateStuckCounter();
-
-        // 近づいたら終了
-        return mob.squaredDistanceTo(owner) > stopDist * stopDist;
+        return mob.distanceToSqr(owner) > stopDist * stopDist;
     }
 
     @Override
     public void start() {
         repathCooldown = 0;
-        lastPos = mob.getPos();
+        lastPos = mob.position();
         noMoveTicks = 0;
     }
 
@@ -105,9 +91,8 @@ public class StudentReturnToOwnerGoal extends Goal {
     public void tick() {
         if (owner == null) return;
 
-        double dist2 = mob.squaredDistanceTo(owner);
+        double dist2 = mob.distanceToSqr(owner);
 
-        // 遠すぎたらテレポ救済
         if (dist2 > teleportDistSq) {
             tryTeleportNearOwner();
             repathCooldown = 0;
@@ -121,16 +106,14 @@ public class StudentReturnToOwnerGoal extends Goal {
         }
         repathCooldown = REPATH_INTERVAL;
 
-        mob.getNavigation().startMovingTo(owner, speed);
+        mob.getNavigation().moveTo(owner, speed);
     }
 
     private void updateStuckCounter() {
-        Vec3d cur = mob.getPos();
+        Vec3 cur = mob.position();
 
-        boolean barelyMoved = cur.squaredDistanceTo(lastPos) < stuckMoveEpsSq;
-
-        // ★「移動中（パスがある/進もうとしてる）のに動いてない」を詰まり扱い
-        boolean tryingToMove = !mob.getNavigation().isIdle() || mob.horizontalCollision;
+        boolean barelyMoved = cur.distanceToSqr(lastPos) < 0.0025;
+        boolean tryingToMove = !mob.getNavigation().isDone() || mob.horizontalCollision;
 
         if (barelyMoved && tryingToMove) noMoveTicks++;
         else noMoveTicks = 0;
@@ -138,30 +121,28 @@ public class StudentReturnToOwnerGoal extends Goal {
         lastPos = cur;
     }
 
-    private PlayerEntity resolveOwner() {
+    private Player resolveOwner() {
         if (student instanceof AbstractStudentEntity se) {
-            PlayerEntity p = se.getOwnerPlayer();
+            Player p = se.getOwnerPlayer();
             if (p != null) return p;
         }
-        return mob.getWorld().getClosestPlayer(mob, 32.0);
+        return mob.level().getNearestPlayer(mob, 32.0);
     }
 
     private void tryTeleportNearOwner() {
-        if (owner == null) return;
-
-        BlockPos base = owner.getBlockPos();
+        BlockPos base = owner.blockPosition();
 
         for (int dy = 0; dy <= 2; dy++) {
             for (int dx = -2; dx <= 2; dx++) {
                 for (int dz = -2; dz <= 2; dz++) {
-                    BlockPos p = base.add(dx, dy, dz);
+                    BlockPos p = base.offset(dx, dy, dz);
                     if (isSafeTeleportPos(p)) {
-                        mob.refreshPositionAndAngles(
+                        mob.snapTo(
                                 p.getX() + 0.5,
                                 p.getY(),
                                 p.getZ() + 0.5,
-                                mob.getYaw(),
-                                mob.getPitch()
+                                mob.getYRot(),
+                                mob.getXRot()
                         );
                         mob.getNavigation().stop();
                         return;
@@ -172,13 +153,10 @@ public class StudentReturnToOwnerGoal extends Goal {
     }
 
     private boolean isSafeTeleportPos(BlockPos p) {
-        var w = mob.getWorld();
-        var below = w.getBlockState(p.down());
+        var w = mob.level();
+        var below = w.getBlockState(p.below());
         if (below.isAir()) return false;
 
-        if (!below.getCollisionShape(w, p.down()).isEmpty()) {
-            return w.getBlockState(p).isAir() && w.getBlockState(p.up()).isAir();
-        }
-        return false;
+        return w.getBlockState(p).isAir() && w.getBlockState(p.above()).isAir();
     }
 }

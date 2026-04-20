@@ -1,91 +1,73 @@
 package com.licht_meilleur.blue_student.entity;
 
+import com.geckolib.animatable.GeoEntity;
+import com.geckolib.animatable.instance.AnimatableInstanceCache;
+import com.geckolib.animatable.manager.AnimatableManager;
+import com.geckolib.animation.AnimationController;
+import com.geckolib.animation.RawAnimation;
+import com.geckolib.animation.object.PlayState;
+import com.geckolib.util.GeckoLibUtil;
 import com.licht_meilleur.blue_student.BlueStudentMod;
 import com.licht_meilleur.blue_student.bed.BedLinkManager;
 import com.licht_meilleur.blue_student.block.OnlyBedBlock;
 import com.licht_meilleur.blue_student.block.entity.OnlyBedBlockEntity;
 import com.licht_meilleur.blue_student.inventory.StudentInventory;
+import com.licht_meilleur.blue_student.inventory.StudentMenuData;
 import com.licht_meilleur.blue_student.inventory.StudentScreenHandler;
-import com.licht_meilleur.blue_student.skill.SkillRegistry;
 import com.licht_meilleur.blue_student.state.StudentWorldState;
+import com.licht_meilleur.blue_student.student.IStudentEntity;
+import com.licht_meilleur.blue_student.student.LookIntentType;
+import com.licht_meilleur.blue_student.student.LookRequest;
+import com.licht_meilleur.blue_student.student.StudentAiMode;
+import com.licht_meilleur.blue_student.student.StudentBrAction;
+import com.licht_meilleur.blue_student.student.StudentEquipments;
 import com.licht_meilleur.blue_student.student.StudentForm;
-import com.licht_meilleur.blue_student.student.*;
+import com.licht_meilleur.blue_student.student.StudentId;
+import com.licht_meilleur.blue_student.student.StudentLifeState;
 import com.licht_meilleur.blue_student.weapon.WeaponSpec;
 import com.licht_meilleur.blue_student.weapon.WeaponSpecs;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.fabricmc.fabric.api.dimension.v1.FabricDimensions;
-import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
+import net.fabricmc.fabric.api.menu.v1.ExtendedMenuProvider;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-
-import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.state.properties.BedPart;
-import net.minecraft.world.level.pathfinder.PathType;
-import net.minecraft.world.level.portal.TeleportTransition;
-
-import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.PathfinderMob;
-import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.item.ItemEntity;
-
-import net.minecraft.world.entity.ai.attributes.AttributeInstance;
-import net.minecraft.world.entity.ai.attributes.AttributeModifier;
-import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
-import net.minecraft.world.entity.ai.attributes.Attributes;
-
-import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.entity.player.Inventory;
-
-import net.minecraft.world.Container;
-import net.minecraft.world.InteractionHand;
-import net.minecraft.world.InteractionResult;
-
-import net.minecraft.world.food.FoodProperties;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
-
-import net.minecraft.world.damagesource.DamageSource;
-
-import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.Vec3;
-
 import net.minecraft.nbt.CompoundTag;
-
-import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
-
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-
 import net.minecraft.util.Mth;
-
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.*;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BedPart;
+import net.minecraft.world.level.pathfinder.PathType;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
-import com.geckolib.animatable.GeoEntity;
-import com.geckolib.animatable.instance.AnimatableInstanceCache;
-import com.geckolib.animatable.manager.AnimatableManager;
-import com.geckolib.animation.AnimationController;
-import com.geckolib.animation.AnimationState;
-import com.geckolib.animation.RawAnimation;
-import com.geckolib.animation.object.PlayState;
-import com.geckolib.util.GeckoLibUtil;
-
-
-
 import java.util.EnumSet;
+import java.util.EnumMap;
 import java.util.UUID;
 
 public abstract class AbstractStudentEntity extends PathfinderMob implements IStudentEntity, GeoEntity {
 
-    // ===== json命名規約 =====
     public static final String ANIM_IDLE   = "animation.model.idle";
     public static final String ANIM_RUN    = "animation.model.run";
     public static final String ANIM_SHOT   = "animation.model.shot";
@@ -99,35 +81,43 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
     public static final String ANIM_EXIT   = "animation.model.exit";
     public static final String ANIM_ACTION = "animation.model.action";
 
-    // ===== 共通：演出トリガー =====
     private static final EntityDataAccessor<Integer> SHOT_TRIGGER =
-            SynchedEntityData.registerData(AbstractStudentEntity.class, TrackedDataHandlerRegistry.INTEGER);
+            SynchedEntityData.defineId(AbstractStudentEntity.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Integer> RELOAD_TRIGGER =
-            SynchedEntityData.registerData(AbstractStudentEntity.class, TrackedDataHandlerRegistry.INTEGER);
+            SynchedEntityData.defineId(AbstractStudentEntity.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Integer> DODGE_TRIGGER =
-            SynchedEntityData.registerData(AbstractStudentEntity.class, TrackedDataHandlerRegistry.INTEGER);
-
-    // ★追加：食べるアクション（ACTION再生用）
+            SynchedEntityData.defineId(AbstractStudentEntity.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Integer> EAT_TRIGGER =
-            SynchedEntityData.registerData(AbstractStudentEntity.class, TrackedDataHandlerRegistry.INTEGER);
+            SynchedEntityData.defineId(AbstractStudentEntity.class, EntityDataSerializers.INT);
 
     private static final EntityDataAccessor<Float> AIM_YAW =
-            SynchedEntityData.registerData(AbstractStudentEntity.class, TrackedDataHandlerRegistry.FLOAT);
+            SynchedEntityData.defineId(AbstractStudentEntity.class, EntityDataSerializers.FLOAT);
     private static final EntityDataAccessor<Float> AIM_PITCH =
-            SynchedEntityData.registerData(AbstractStudentEntity.class, TrackedDataHandlerRegistry.FLOAT);
+            SynchedEntityData.defineId(AbstractStudentEntity.class, EntityDataSerializers.FLOAT);
 
     private static final EntityDataAccessor<Integer> LIFE_STATE =
-            SynchedEntityData.registerData(AbstractStudentEntity.class, TrackedDataHandlerRegistry.INTEGER);
+            SynchedEntityData.defineId(AbstractStudentEntity.class, EntityDataSerializers.INT);
 
-    // オーナー不在の間だけ強制セキュリティにしたかどうか
-    private boolean forcedSecurityBecauseOwnerOffline = false;
+    private static final EntityDataAccessor<Integer> FORM_ID =
+            SynchedEntityData.defineId(AbstractStudentEntity.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Integer> BR_ACTION_ID =
+            SynchedEntityData.defineId(AbstractStudentEntity.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Integer> BR_ACTION_HOLD =
+            SynchedEntityData.defineId(AbstractStudentEntity.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Integer> LAST_SHOT_KIND =
+            SynchedEntityData.defineId(AbstractStudentEntity.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Integer> BR_ACTION_VER =
+            SynchedEntityData.defineId(AbstractStudentEntity.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Integer> SHOT_VER =
+            SynchedEntityData.defineId(AbstractStudentEntity.class, EntityDataSerializers.INT);
 
-    // ===== GeckoLib =====
+    private int lastShotVerClient = -1;
+
     private final AnimatableInstanceCache geoCache = GeckoLibUtil.createInstanceCache(this);
 
     private static final RawAnimation IDLE   = RawAnimation.begin().thenLoop(ANIM_IDLE);
     private static final RawAnimation RUN    = RawAnimation.begin().thenLoop(ANIM_RUN);
-    private static final RawAnimation SHOT   = RawAnimation.begin().thenPlay(ANIM_SHOT);
+    private static final RawAnimation SHOT   = RawAnimation.begin().thenLoop(ANIM_SHOT);
     private static final RawAnimation RELOAD = RawAnimation.begin().thenPlay(ANIM_RELOAD);
     private static final RawAnimation SLEEP  = RawAnimation.begin().thenLoop(ANIM_SLEEP);
     private static final RawAnimation EXIT   = RawAnimation.begin().thenPlay(ANIM_EXIT);
@@ -139,11 +129,54 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
     private static final RawAnimation ACTION = RawAnimation.begin().thenPlay(ANIM_ACTION);
 
 
+    private static final int DODGE_ANIM_TICKS = 10;
+    private static final int JUMP_ANIM_TICKS  = 8;
+    private static final int EAT_ANIM_TICKS   = 16;
+
+
     @Nullable
-    protected RawAnimation getOverrideAnimationIfAny() { return null; }
+    protected RawAnimation getOverrideAnimationIfAny() {
+        return null;
+    }
 
+    protected StudentLifeState lifeState = StudentLifeState.NORMAL;
+    protected BlockPos securityPos;
+    protected UUID ownerUuid;
 
-    // client演出タイマー
+    protected final StudentInventory studentInventory = new StudentInventory(9, this::onStudentInventoryChanged);
+
+    protected int ammoInMag = 0;
+    protected int reloadTicksLeft = 0;
+    protected boolean ammoInitDone = false;
+
+    private final EnumMap<IStudentEntity.FireChannel, UUID> queuedFire =
+            new EnumMap<>(IStudentEntity.FireChannel.class);
+    private IStudentEntity.FireChannel lastConsumedChannel = IStudentEntity.FireChannel.MAIN;
+
+    private boolean forcedSecurityBecauseOwnerOffline = false;
+    private boolean appliedStats = false;
+    private boolean guardBuffApplied = false;
+    private boolean kisakiBuffApplied = false;
+    private boolean evading = false;
+    private boolean ghost = false;
+    private boolean lookMoveDir = false;
+    private boolean packedForDimTransfer = false;
+    private boolean dimTransferQueued = false;
+    private boolean owRespawnQueued = false;
+
+    private int kisakiSupportTicks = 0;
+    private int lifeTimer = 0;
+    private int eatingSlot = -1;
+    private int eatingServerTicks = 0;
+    private int skillCooldownTicks = 0;
+    private int skillActiveTicksLeft = 0;
+    private int skillTrigger = 0;
+    private int lookMoveDirPriority = 0;
+    private int lookMoveDirTicks = 0;
+    private int dimTransferCooldown = 0;
+    private int owRespawnCooldown = 0;
+    public int noFallTicks = 0;
+
     private int clientShotTicks = 0;
     private int lastShotTrigger = 0;
     private boolean shotJustStarted = false;
@@ -159,187 +192,93 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
     private int clientJumpTicks = 0;
     private boolean wasOnGroundClient = true;
 
-    // ★追加：eat演出
     private int clientEatTicks = 0;
     private int lastEatTrigger = 0;
     private boolean eatJustStarted = false;
 
-    private static final int SHOT_ANIM_TICKS = 4;
-    private static final int DODGE_ANIM_TICKS = 10;
-    private static final int JUMP_ANIM_TICKS  = 8;
-    private static final int EAT_ANIM_TICKS   = 16; // actionの見える長さ（好みで）
+    private int clientShotHoldTicks = 0;
 
-    // ===== Life / State =====
-    protected StudentLifeState lifeState = StudentLifeState.NORMAL;
-    protected int recoverTick = 0;
+    private boolean bs_wasOnGround = true;
 
-    protected BlockPos securityPos;
-    protected UUID ownerUuid = null;
-
-    // ===== Inventory =====
-    protected final StudentInventory studentInventory = new StudentInventory(9, this::onStudentInventoryChanged);
-
-    private boolean appliedStats = false;
-
-    // ===== Ammo / Reload =====
-    protected int ammoInMag = 0;
-    protected int reloadTicksLeft = 0;
-    protected boolean ammoInitDone = false;
-
-    // ===== queue fire =====
-    private UUID queuedFireTargetUuid = null;     // main
-    private UUID queuedFireSubTargetUuid = null;  // sub
-    private boolean lastConsumedWasSub = false; // sub
-
-    // ===== queue fire (channel) =====
-    private final java.util.EnumMap<IStudentEntity.FireChannel, UUID> queuedFire =
-            new java.util.EnumMap<>(IStudentEntity.FireChannel.class);
-
-    private IStudentEntity.FireChannel lastConsumedChannel = IStudentEntity.FireChannel.MAIN;
-
-
-    private int lifeTimer;
+    private final LookRequest lookReq = new LookRequest();
 
     private BlockPos respawnBedFoot;
     private BlockPos respawnSafePos;
 
-
-    // ★ shot の “0フレーム” を潰すための保持（1tickで十分）
-    private int clientShotHoldTicks = 0;
-    private static final int SHOT_HOLD_TICKS = 1;
-
-    // ===== Evade state =====
-    private boolean evading = false;
-
-    // ===== No-fall grace (common) =====
-    public int noFallTicks = 0;
-    private boolean bs_wasOnGround = true;
-
-
-
-    // ===== ゴースト =====
-    private boolean ghost = false;
-
-    // ★食べてる最中の表示用（Rendererで右手表示に使う）
-    // -1 なら非表示
-    private int eatingSlot = -1;
-    private int eatingServerTicks = 0;
-
-    private final LookRequest lookReq = new LookRequest();
-
-
-    // skill state
-    private int skillCooldownTicks = 0;
-    private int skillActiveTicksLeft = 0;
-
-    // client animation trigger用（DataTrackerでも可）
-    private int skillTrigger = 0; // 発動のたびに+1してクライアントに知らせる
-
-    // ===== Guard buff（ホシノ固有で使う“共通API”）=====
-    protected static final UUID GUARD_ARMOR_UUID =
-            UUID.fromString("b3a2fba6-5c73-4d8f-a10b-0b3f6c7f8a01");
-    protected static final UUID GUARD_MAXHP_UUID =
-            UUID.fromString("6b6c9c2a-43a8-4d4f-9aa2-2e23c77c1c02");
-
-    protected boolean guardBuffApplied = false;
-
-    // ===== キサキ =====
-    protected static final UUID KISAKI_ARMOR_UUID =
-            UUID.fromString("2ddc9b7c-7c72-4e86-b8e5-3f7a2df5d6b1");
-    protected static final UUID KISAKI_MAXHP_UUID =
-            UUID.fromString("9c3f0c47-3f2b-4dd1-9f1b-7e6b7b7fd11a");
-
-    protected boolean kisakiBuffApplied = false;
-    protected int kisakiSupportTicks = 0;
-
-
-    //ネザライト強度
-    protected static final UUID BR_TOUGH_UUID =
-            UUID.fromString("8e7f6a55-1c2d-4b1a-9a77-55aa77cc8899");
-
-    private int dimFollowCooldown = 0;
-
-
-    private boolean owRespawnQueued = false;
-    private int owRespawnCooldown = 0;
-
-    // 次元移動（FOLLOW/Callback共通）
-    private boolean dimTransferQueued = false;
-    private int dimTransferCooldown = 0;
-
-    // パック方式（移動中にentity消して復元する）
-    private boolean packedForDimTransfer = false;
-
-
-    private boolean isBrMode = false;
-
-    // Look policy (MOVE DIR)
-    private boolean lookMoveDir = false;
-    private int lookMoveDirPriority = 0;
-    private int lookMoveDirTicks = 0;
-
-
-
-    private int lastBrActionVerClient = -1;
-
-
-    // ===== BR animation hold (client-side) =====
     private StudentBrAction lastBrActionClient = StudentBrAction.NONE;
     private int brHoldTicksClient = 0;
+    private int lastBrActionVerClient = -1;
 
-    // 何tickだけ「直前のBR action」を保持するか（好みで 2〜4）
-    protected int getBrActionHoldTicks() { return 3; }
+    private Vec3 clientMuzzleWorldPos;
+    private Vec3 clientSubMuzzleWorldPos;
+    private Vec3 clientLeftSubMuzzleWorldPos;
+    private Vec3 clientRightSubMuzzleWorldPos;
 
+    private int shotRestartGapTicks = 0;
 
+    protected AbstractStudentEntity(EntityType<? extends PathfinderMob> type, Level level) {
+        super(type, level);
 
-
-    // ===== Form (NORMAL / BR) =====
-    private static final TrackedData<Integer> FORM_ID =
-            DataTracker.registerData(AbstractStudentEntity.class, TrackedDataHandlerRegistry.INTEGER);
-
-    private static final TrackedData<Integer> BR_ACTION_ID =
-            DataTracker.registerData(AbstractStudentEntity.class, TrackedDataHandlerRegistry.INTEGER);
-    private static final TrackedData<Integer> BR_ACTION_HOLD =
-            DataTracker.registerData(AbstractStudentEntity.class, TrackedDataHandlerRegistry.INTEGER);
-    private static final TrackedData<Integer> LAST_SHOT_KIND =
-            DataTracker.registerData(AbstractStudentEntity.class, TrackedDataHandlerRegistry.INTEGER);
-    // 既存：BR_ACTION_ID, BR_ACTION_HOLD がある前提
-    private static final TrackedData<Integer> BR_ACTION_VER =
-            DataTracker.registerData(AbstractStudentEntity.class, TrackedDataHandlerRegistry.INTEGER);
-
-
-
-
-    public static DefaultAttributeContainer.Builder createAttributes() {
-        return PathAwareEntity.createMobAttributes()
-                .add(EntityAttributes.GENERIC_MAX_HEALTH, 20.0)
-                .add(EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.35)
-                .add(EntityAttributes.GENERIC_ATTACK_DAMAGE, 2.0)
-                .add(EntityAttributes.GENERIC_ARMOR, 20.0)
-                .add(EntityAttributes.GENERIC_ARMOR_TOUGHNESS, 4.0);
+        //this.maxUpStep(1.0f);
+        this.setPathfindingMalus(PathType.LAVA, 80.0f);
+        //this.setPathfindingMalus(PathType.DAMAGE_FIRE, 40.0f);
+        //this.setPathfindingMalus(PathType.DANGER_FIRE, 20.0f);
     }
 
-    protected AbstractStudentEntity(EntityType<? extends PathAwareEntity> type, World world) {
-        super(type, world);
-
-        this.setStepHeight(1.0f);
-
-        this.setPathfindingPenalty(PathNodeType.LAVA, 80.0f);
-        this.setPathfindingPenalty(PathNodeType.DAMAGE_FIRE, 40.0f);
-        this.setPathfindingPenalty(PathNodeType.DANGER_FIRE, 20.0f);
+    public static AttributeSupplier.Builder createAttributes() {
+        return PathfinderMob.createMobAttributes()
+                .add(Attributes.MAX_HEALTH, 20.0)
+                .add(Attributes.MOVEMENT_SPEED, 0.35)
+                .add(Attributes.ATTACK_DAMAGE, 2.0)
+                .add(Attributes.ARMOR, 20.0)
+                .add(Attributes.ARMOR_TOUGHNESS, 4.0);
     }
 
-    // ===== 必須：生徒ID =====
-    @Override public abstract StudentId getStudentId();
+    @Override
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        super.defineSynchedData(builder);
 
-    // ===== AI mode tracked data は各生徒クラスで登録して返す =====
-    protected abstract TrackedData<StudentAiMode> getAiModeTrackedData();
+        builder.define(SHOT_TRIGGER, 0);
+        builder.define(RELOAD_TRIGGER, 0);
+        builder.define(DODGE_TRIGGER, 0);
+        builder.define(EAT_TRIGGER, 0);
+
+        builder.define(AIM_YAW, 0f);
+        builder.define(AIM_PITCH, 0f);
+
+        builder.define(LIFE_STATE, StudentLifeState.NORMAL.ordinal());
+        builder.define(getAiModeTrackedData(), getDefaultAiMode().id);
+
+        builder.define(FORM_ID, 0);
+        builder.define(BR_ACTION_ID, StudentBrAction.NONE.ordinal());
+        builder.define(BR_ACTION_HOLD, 0);
+        builder.define(LAST_SHOT_KIND, 0);
+        builder.define(BR_ACTION_VER, 0);
+
+        builder.define(SHOT_VER, 0);
+
+    }
+
+    @Override
+    public abstract StudentId getStudentId();
+
+    protected abstract EntityDataAccessor<Integer> getAiModeTrackedData();
+
+    protected int getBrActionHoldTicks() {
+        return 3;
+    }
 
     protected EnumSet<StudentAiMode> getAllowedAiModes() {
         StudentAiMode[] allowed = getStudentId().getAllowedAis();
         EnumSet<StudentAiMode> set = EnumSet.noneOf(StudentAiMode.class);
-        if (allowed != null) for (StudentAiMode m : allowed) set.add(m);
-        if (set.isEmpty()) set.add(StudentAiMode.FOLLOW);
+        if (allowed != null) {
+            for (StudentAiMode mode : allowed) {
+                set.add(mode);
+            }
+        }
+        if (set.isEmpty()) {
+            set.add(StudentAiMode.FOLLOW);
+        }
         return set;
     }
 
@@ -348,214 +287,200 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
         return (allowed != null && allowed.length > 0) ? allowed[0] : StudentAiMode.FOLLOW;
     }
 
-    // ===== owner =====
-    @Override public void setOwnerUuid(UUID uuid) { this.ownerUuid = uuid; onStudentInventoryChanged(); }
-    @Override public UUID getOwnerUuid() { return ownerUuid; }
+    @Override
+    public void setOwnerUuid(UUID uuid) {
+        if (uuid == null) {
+            return;
+        }
 
-    public PlayerEntity getOwnerPlayer() {
-        if (ownerUuid == null) return null;
-        return this.getWorld().getPlayerByUuid(ownerUuid);
+        if (this.ownerUuid != null && !this.ownerUuid.equals(uuid)) {
+            BlueStudentMod.LOGGER.error(
+                    "[BlueStudent] BLOCK owner overwrite student={} entityId={} uuid={} oldOwner={} newOwner={}",
+                    this.getStudentId().asString(),
+                    this.getId(),
+                    this.getUUID(),
+                    this.ownerUuid,
+                    uuid
+            );
+            new Exception("[BlueStudent] owner overwrite trace").printStackTrace();
+            return;
+        }
+
+        this.ownerUuid = uuid;
+        onStudentInventoryChanged();
     }
 
-    // ===== AI mode =====
-    @Override public StudentAiMode getAiMode() { return this.dataTracker.get(getAiModeTrackedData()); }
-    @Override public void setAiMode(StudentAiMode mode) {
+    @Override
+    public UUID getOwnerUuid() {
+        return ownerUuid;
+    }
+
+    public Player getOwnerPlayer() {
+        if (ownerUuid == null || !(level() instanceof ServerLevel sw)) return null;
+        return sw.getPlayerByUUID(ownerUuid);
+    }
+    @Override
+    protected void addAdditionalSaveData(ValueOutput output) {
+        super.addAdditionalSaveData(output);
+
+        if (this.ownerUuid != null) {
+            output.putString("Owner", this.ownerUuid.toString());
+        }
+    }
+
+    @Override
+    protected void readAdditionalSaveData(ValueInput input) {
+        super.readAdditionalSaveData(input);
+
+        this.ownerUuid = input.getString("Owner")
+                .map(UUID::fromString)
+                .orElse(null);
+    }
+
+    @Override
+    public StudentAiMode getAiMode() {
+        return StudentAiMode.fromId(this.entityData.get(getAiModeTrackedData()));
+    }
+
+    @Override
+    public void setAiMode(StudentAiMode mode) {
         if (!getAllowedAiModes().contains(mode)) return;
-        this.dataTracker.set(getAiModeTrackedData(), mode);
+        this.entityData.set(getAiModeTrackedData(), mode.id);
     }
 
-    // ===== inventory =====
-    @Override public Inventory getStudentInventory() { return studentInventory; }
-    protected void onStudentInventoryChanged() { }
+    @Override
+    public StudentInventory getStudentInventory() {
+        return studentInventory;
+    }
 
-    // ===== 演出トリガー =====
+    protected void onStudentInventoryChanged() {
+    }
+
     @Override
     public void requestShot(IStudentEntity.ShotKind kind, LivingEntity target) {
         requestShot(kind);
     }
 
     public void requestShot(IStudentEntity.ShotKind kind) {
-        if (this.getWorld().isClient) return;
-        this.dataTracker.set(SHOT_TRIGGER, this.dataTracker.get(SHOT_TRIGGER) + 1);
+        if (level().isClientSide()) return;
 
+        entityData.set(SHOT_TRIGGER, entityData.get(SHOT_TRIGGER) + 1);
+        entityData.set(SHOT_VER, entityData.get(SHOT_VER) + 1);
     }
-
 
     @Override
     public void requestReload() {
-        if (this.getWorld().isClient) return;
-        this.dataTracker.set(RELOAD_TRIGGER, this.dataTracker.get(RELOAD_TRIGGER) + 1);
+        if (level().isClientSide()) return;
+        entityData.set(RELOAD_TRIGGER, entityData.get(RELOAD_TRIGGER) + 1);
     }
 
     public void requestDodge() {
-        if (this.getWorld().isClient) return;
-        this.dataTracker.set(DODGE_TRIGGER, this.dataTracker.get(DODGE_TRIGGER) + 1);
+        if (level().isClientSide()) return;
+        entityData.set(DODGE_TRIGGER, entityData.get(DODGE_TRIGGER) + 1);
     }
 
-    // ★追加：食べるアクション
+    public void requestJump() {
+        if (level().isClientSide()) return;
+        entityData.set(DODGE_TRIGGER, entityData.get(DODGE_TRIGGER) + 1);
+    }
+
     protected void requestEat() {
-        if (this.getWorld().isClient) return;
-        this.dataTracker.set(EAT_TRIGGER, this.dataTracker.get(EAT_TRIGGER) + 1);
+        if (level().isClientSide()) return;
+        entityData.set(EAT_TRIGGER, entityData.get(EAT_TRIGGER) + 1);
     }
 
-    // ===== UI =====
     @Override
-    public ActionResult interactMob(PlayerEntity player, Hand hand) {
-        if (this.getWorld().isClient) return ActionResult.SUCCESS;
-
-        if (ownerUuid == null) setOwnerUuid(player.getUuid());
-        else if (!ownerUuid.equals(player.getUuid())) return ActionResult.PASS;
-
-        if (player instanceof ServerPlayerEntity sp) {
-            openStudentCard(sp);
-            return ActionResult.CONSUME;
+    protected InteractionResult mobInteract(Player player, InteractionHand hand) {
+        if (level().isClientSide()) {
+            return InteractionResult.SUCCESS;
         }
-        return ActionResult.PASS;
+
+
+        if (ownerUuid == null) {
+            setOwnerUuid(player.getUUID());
+        } else if (!ownerUuid.equals(player.getUUID())) {
+            return InteractionResult.CONSUME;
+        }
+
+        if (player instanceof ServerPlayer sp) {
+            openStudentCard(sp);
+            return InteractionResult.CONSUME;
+        }
+
+        return InteractionResult.CONSUME;
     }
 
-    protected void openStudentCard(ServerPlayerEntity sp) {
-        sp.openHandledScreen(new ExtendedScreenHandlerFactory() {
-            @Override public void writeScreenOpeningData(ServerPlayerEntity player, PacketByteBuf buf) {
-                buf.writeInt(((Entity) AbstractStudentEntity.this).getId());
+    public void openStudentCard(Player player) {
+        if (!(player instanceof ServerPlayer serverPlayer)) {
+            return;
+        }
+
+        if (ownerUuid == null || !ownerUuid.equals(player.getUUID())) {
+            return;
+        }
+
+        final var self = this;
+
+        serverPlayer.openMenu(new ExtendedMenuProvider<StudentMenuData>() {
+            @Override
+            public StudentMenuData getScreenOpeningData(ServerPlayer player) {
+                return new StudentMenuData(self.getId());
             }
-            @Override public Text getDisplayName() { return Text.empty(); }
-            @Override public ScreenHandler createMenu(int syncId, PlayerInventory inv, PlayerEntity p) {
-                return new StudentScreenHandler(syncId, inv, AbstractStudentEntity.this);
+
+            @Override
+            public Component getDisplayName() {
+                return self.getDisplayName();
+            }
+
+            @Override
+            public AbstractContainerMenu createMenu(int syncId, Inventory inv, Player player) {
+                return new StudentScreenHandler(syncId, inv, self);
             }
         });
     }
 
-    // ===== sleep position helpers =====
-    protected double getSleepForwardOffset() { return 0.7; }
-    protected double getSleepSideOffset() { return 0.0; }
-    protected double getSleepYOffset() { return 0.3; }
+    protected double getSleepForwardOffset() {
+        return 0.7;
+    }
 
-    protected Vec3d getSleepPos(ServerWorld sw, BlockPos bedFoot) {
+    protected double getSleepSideOffset() {
+        return 0.0;
+    }
+
+    protected double getSleepYOffset() {
+        return 0.3;
+    }
+
+    protected Vec3 getSleepPos(ServerLevel sw, BlockPos bedFoot) {
         BlockState st = sw.getBlockState(bedFoot);
-        if (!(st.getBlock() instanceof OnlyBedBlock) || !st.contains(OnlyBedBlock.FACING)) {
-            return new Vec3d(bedFoot.getX() + 0.5, bedFoot.getY() + getSleepYOffset(), bedFoot.getZ() + 0.5);
+        if (!(st.getBlock() instanceof OnlyBedBlock) || !st.hasProperty(OnlyBedBlock.FACING)) {
+            return new Vec3(bedFoot.getX() + 0.5, bedFoot.getY() + getSleepYOffset(), bedFoot.getZ() + 0.5);
         }
 
-        Direction dir = st.get(OnlyBedBlock.FACING);
+        Direction dir = st.getValue(OnlyBedBlock.FACING);
+        Vec3 fwd = new Vec3(dir.getStepX(), 0, dir.getStepZ()).normalize();
+        Vec3 right = new Vec3(-fwd.z, 0, fwd.x);
+        Vec3 base = new Vec3(bedFoot.getX() + 0.5, bedFoot.getY() + getSleepYOffset(), bedFoot.getZ() + 0.5);
 
-        Vec3d fwd = new Vec3d(dir.getOffsetX(), 0, dir.getOffsetZ()).normalize();
-        Vec3d right = new Vec3d(-fwd.z, 0, fwd.x);
-
-        Vec3d base = new Vec3d(bedFoot.getX() + 0.5, bedFoot.getY() + getSleepYOffset(), bedFoot.getZ() + 0.5);
-
-        return base
-                .add(fwd.multiply(getSleepForwardOffset()))
-                .add(right.multiply(getSleepSideOffset()));
+        return base.add(fwd.scale(getSleepForwardOffset())).add(right.scale(getSleepSideOffset()));
     }
 
-    // HinaEntity の fly_shot 判定など「クライアントの射撃演出中か」を見る用
     public int getClientShotTicksForAnim() {
-        if (!this.getWorld().isClient) return 0;
-        return this.clientShotTicks + this.clientShotHoldTicks;
+        if (!level().isClientSide()) return 0;
+        return clientShotTicks + clientShotHoldTicks;
     }
 
-
-    // ===== tick =====
     @Override
     public void tick() {
         super.tick();
 
-
-
-
-
-        // ===== client：トリガーで演出タイマーを回す =====
-        if (this.getWorld().isClient) {
-
-            if (kisakiSupportTicks > 0) {
-                kisakiSupportTicks--;
-                if (kisakiSupportTicks == 0) {
-                    applyKisakiSupportBuff(false, 0, 0, 0);
-                }
-            }
-
-            // ★クライアントだけ：BRアニメ保持tickを減らす
-            if (this.getWorld().isClient) {
-                if (brHoldTicksClient > 0) brHoldTicksClient--;
-            }
-
-
-
-
-            int shotTrig = this.dataTracker.get(SHOT_TRIGGER);
-            if (shotTrig != lastShotTrigger) {
-                lastShotTrigger = shotTrig;
-
-                WeaponSpec spec2 = WeaponSpecs.forStudent(getStudentId());
-
-                // 昔の「キャンセル連射感」に戻る
-                clientShotTicks = Math.max(1, spec2.animShotHoldTicks);
-                clientShotHoldTicks = 0; // 0フレーム潰しが不要なら消してもOK
-                shotJustStarted = true;
-
-
-                // ★0フレーム潰し（任意だが安定）
-                clientShotHoldTicks = 2;
-
-                shotJustStarted = true;
-            } else {
-                if (clientShotTicks > 0) {
-                    clientShotTicks--;
-                    if (clientShotTicks == 0) {
-                        clientShotHoldTicks = 2;
-                    }
-                } else if (clientShotHoldTicks > 0) {
-                    clientShotHoldTicks--;
-                }
-            }
-
-
-
-            int reloadTrig = this.dataTracker.get(RELOAD_TRIGGER);
-            if (reloadTrig != lastReloadTrigger) {
-                lastReloadTrigger = reloadTrig;
-                WeaponSpec spec = WeaponSpecs.forStudent(getStudentId());
-                clientReloadTicks = Math.max(1, spec.reloadTicks);
-                reloadJustStarted = true;
-            } else if (clientReloadTicks > 0) {
-                clientReloadTicks--;
-            }
-
-            int dodgeTrig = this.dataTracker.get(DODGE_TRIGGER);
-            if (dodgeTrig != lastDodgeTrigger) {
-                lastDodgeTrigger = dodgeTrig;
-                clientDodgeTicks = DODGE_ANIM_TICKS;
-                dodgeJustStarted = true;
-            } else if (clientDodgeTicks > 0) {
-                clientDodgeTicks--;
-            }
-
-            int eatTrig = this.dataTracker.get(EAT_TRIGGER);
-            if (eatTrig != lastEatTrigger) {
-                lastEatTrigger = eatTrig;
-                clientEatTicks = EAT_ANIM_TICKS;
-                eatJustStarted = true;
-            } else if (clientEatTicks > 0) {
-                clientEatTicks--;
-            }
-
-            boolean onGroundNow = this.isOnGround();
-            if (wasOnGroundClient && !onGroundNow) {
-                if (this.getVelocity().y > 0.02) {
-                    clientJumpTicks = JUMP_ANIM_TICKS;
-                }
-            }
-            wasOnGroundClient = onGroundNow;
-            if (clientJumpTicks > 0) clientJumpTicks--;
-
+        if (level().isClientSide()) {
+            tickClientOnly();
             return;
         }
 
-
         tickBrActionTimer();
 
-
-        // ===== server：弾数初期化・ステータス適用 =====
         WeaponSpec spec = WeaponSpecs.forStudent(getStudentId());
         if (!ammoInitDone) {
             ammoInMag = spec.magSize;
@@ -567,161 +492,199 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
             applyStatsFromStudentId();
         }
 
-        if (this.age % 5 == 0) tryPickupNearbyItems();
+        if (tickCount % 5 == 0) {
+            tryPickupNearbyItems();
+        }
 
         tickLifeStateServer();
-
-        // ★フォームのTick（まだ使ってないなら後でOK）
         tickFormFromEquipment();
 
-
-        if (this.age % 20 == 0) {
+        if (tickCount % 20 == 0) {
             tickFormFromEquipment();
         }
 
-        // 食事の表示タイマー
         if (eatingServerTicks > 0) {
             eatingServerTicks--;
-            if (eatingServerTicks <= 0) eatingSlot = -1;
+            if (eatingServerTicks <= 0) {
+                eatingSlot = -1;
+            }
         }
 
-
-        // ★スキル共通Tick（まだ使ってないなら後でOK）
         tickSkillCommon();
 
-
-
-        // server tick のどこか（lifeLock解除後・ownerOnline判定の後あたりが安全）
         if (dimTransferCooldown > 0) dimTransferCooldown--;
-
         if (owRespawnCooldown > 0) owRespawnCooldown--;
-
 
         handleFollowDimTransfer();
 
-        PlayerEntity owner = getOwnerPlayer();
-        if (owner instanceof ServerPlayerEntity sp) {
-            // ★復活中はディメンション追従しない（復活処理とぶつかる）
+        Player owner = getOwnerPlayer();
+        if (owner instanceof ServerPlayer sp) {
             if (!isLifeLockedForGoal() && getAiMode() == StudentAiMode.FOLLOW) {
-                if (sp.getServerWorld() != this.getWorld()) {
-                    queueTeleportToOwnerDimension(sp); // ★引数は1つ
+                if (sp.level() != level()) {
+                    queueTeleportToOwnerDimension(sp);
                 }
             }
         }
 
-
-
-
-
-
-
-
-        // ===== server：オーナー不在ならSECURITYにする =====
         if (ownerUuid != null) {
-            boolean ownerOnline = (getOwnerPlayer() != null);
-
-            boolean lifeLocksAi = isLifeLocked();
-
-            if (!lifeLocksAi) {
+            boolean ownerOnline = getOwnerPlayer() != null;
+            if (!isLifeLocked()) {
                 if (!ownerOnline) {
                     if (!forcedSecurityBecauseOwnerOffline) {
                         forcedSecurityBecauseOwnerOffline = true;
-                        this.setAiMode(StudentAiMode.SECURITY);
-                        if (this.securityPos == null) this.securityPos = this.getBlockPos();
+                        setAiMode(StudentAiMode.SECURITY);
+                        if (securityPos == null) {
+                            securityPos = blockPosition();
+                        }
                     }
-                } else {
-                    if (forcedSecurityBecauseOwnerOffline) {
-                        forcedSecurityBecauseOwnerOffline = false;
-                        this.setAiMode(StudentAiMode.FOLLOW);
-                    }
+                } else if (forcedSecurityBecauseOwnerOffline) {
+                    forcedSecurityBecauseOwnerOffline = false;
+                    setAiMode(StudentAiMode.FOLLOW);
                 }
-
             }
         }
 
-        // ★LOOKポリシー適用（SIDE中は体Yawを移動方向へ）
         tickLookPolicies();
 
+        if (tickCount % 5 == 0 && level() instanceof ServerLevel sw) {
+            StudentWorldState.get(sw).updatePos(getStudentId(), sw, blockPosition());
+        }
+    }
 
-        // ★ 現在位置を常に保存（5tickに1回で十分軽い）
-        if (this.age % 5 == 0 && this.getWorld() instanceof ServerWorld sw) {
-            StudentWorldState.get(sw)
-                    .updatePos(getStudentId(), sw, this.getBlockPos());
+
+
+    private void tickClientOnly() {
+        if (kisakiSupportTicks > 0) {
+            kisakiSupportTicks--;
+            if (kisakiSupportTicks == 0) {
+                applyKisakiSupportBuff(false, 0, 0, 0);
+            }
         }
 
+        if (brHoldTicksClient > 0) {
+            brHoldTicksClient--;
+        }
 
+        int shotTrig = entityData.get(SHOT_TRIGGER);
+        int shotVer = entityData.get(SHOT_VER);
+
+        if (shotTrig != lastShotTrigger || shotVer != lastShotVerClient) {
+            lastShotTrigger = shotTrig;
+            lastShotVerClient = shotVer;
+
+            WeaponSpec spec = WeaponSpecs.forStudent(getStudentId());
+
+            clientShotTicks = Math.max(2, spec.animShotHoldTicks);
+            clientShotHoldTicks = 4;
+            shotJustStarted = true;
+        } else {
+            if (clientShotTicks > 0) {
+                clientShotTicks--;
+                if (clientShotTicks == 0) {
+                    clientShotHoldTicks = 4;
+                }
+            } else if (clientShotHoldTicks > 0) {
+                clientShotHoldTicks--;
+            }
+        }
+
+        int reloadTrig = entityData.get(RELOAD_TRIGGER);
+        if (reloadTrig != lastReloadTrigger) {
+            lastReloadTrigger = reloadTrig;
+            WeaponSpec spec = WeaponSpecs.forStudent(getStudentId());
+            clientReloadTicks = Math.max(1, spec.reloadTicks);
+            reloadJustStarted = true;
+        } else if (clientReloadTicks > 0) {
+            clientReloadTicks--;
+        }
+
+        int dodgeTrig = entityData.get(DODGE_TRIGGER);
+        if (dodgeTrig != lastDodgeTrigger) {
+            lastDodgeTrigger = dodgeTrig;
+            clientDodgeTicks = DODGE_ANIM_TICKS;
+            dodgeJustStarted = true;
+        } else if (clientDodgeTicks > 0) {
+            clientDodgeTicks--;
+        }
+
+        int eatTrig = entityData.get(EAT_TRIGGER);
+        if (eatTrig != lastEatTrigger) {
+            lastEatTrigger = eatTrig;
+            clientEatTicks = EAT_ANIM_TICKS;
+            eatJustStarted = true;
+        } else if (clientEatTicks > 0) {
+            clientEatTicks--;
+        }
+
+        boolean onGroundNow = onGround();
+        if (wasOnGroundClient && !onGroundNow) {
+            if (getDeltaMovement().y > 0.02) {
+                clientJumpTicks = JUMP_ANIM_TICKS;
+            }
+        }
+        wasOnGroundClient = onGroundNow;
+        if (clientJumpTicks > 0) clientJumpTicks--;
     }
 
     private void applyStatsFromStudentId() {
         StudentId id = getStudentId();
 
-        EntityAttributeInstance mh = getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH);
-        if (mh != null) mh.setBaseValue(id.getBaseMaxHp());
+        AttributeInstance mh = getAttribute(Attributes.MAX_HEALTH);
+        if (mh != null) {
+            mh.setBaseValue(id.getBaseMaxHp());
+        }
 
-        EntityAttributeInstance ar = getAttributeInstance(EntityAttributes.GENERIC_ARMOR);
-        if (ar != null) ar.setBaseValue(id.getBaseDefense());
+        AttributeInstance ar = getAttribute(Attributes.ARMOR);
+        if (ar != null) {
+            ar.setBaseValue(id.getBaseDefense());
+        }
 
-        // ★ここが原因：復活中は満タンにしない
         if (!isLifeLocked()) {
-            this.setHealth(this.getMaxHealth());
-        } else {
-            // 復活中は「上限超えだけ丸める」
-            if (this.getHealth() > this.getMaxHealth()) {
-                this.setHealth(this.getMaxHealth());
-            }
+            setHealth(getMaxHealth());
+        } else if (getHealth() > getMaxHealth()) {
+            setHealth(getMaxHealth());
         }
     }
 
-    /**
-     * ★ホシノのガードで使う（共通API）
-     * - on=true で防御/最大HPを加算
-     * - on=false で元に戻す
-     * ここは「ホシノだけが呼ぶ」想定。
-     */
     protected void applyGuardBuff(boolean on, double addArmor, double addMaxHp, float healOnApply) {
-        var armor = this.getAttributeInstance(EntityAttributes.GENERIC_ARMOR);
-        var maxHp = this.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH);
+        AttributeInstance armor = getAttribute(Attributes.ARMOR);
+        AttributeInstance maxHp = getAttribute(Attributes.MAX_HEALTH);
 
         if (on) {
             if (guardBuffApplied) return;
             guardBuffApplied = true;
 
             if (armor != null) {
-                armor.removeModifier(GUARD_ARMOR_UUID);
-                armor.addPersistentModifier(new EntityAttributeModifier(
-                        GUARD_ARMOR_UUID,
-                        "guard_armor",
+                armor.removeModifier(BlueStudentMod.id("guard_armor"));
+                armor.addOrReplacePermanentModifier(new AttributeModifier(
+                        BlueStudentMod.id("guard_armor"),
                         addArmor,
-                        EntityAttributeModifier.Operation.ADDITION
+                        AttributeModifier.Operation.ADD_VALUE
                 ));
             }
 
             if (maxHp != null) {
-                maxHp.removeModifier(GUARD_MAXHP_UUID);
-                maxHp.addPersistentModifier(new EntityAttributeModifier(
-                        GUARD_MAXHP_UUID,
-                        "guard_maxhp",
+                maxHp.removeModifier(BlueStudentMod.id("guard_maxhp"));
+                maxHp.addOrReplacePermanentModifier(new AttributeModifier(
+                        BlueStudentMod.id("guard_maxhp"),
                         addMaxHp,
-                        EntityAttributeModifier.Operation.ADDITION
+                        AttributeModifier.Operation.ADD_VALUE
                 ));
             }
 
-            // HP増加分だけ少し回復（最大まで全回復はしない）
-            float newMax = this.getMaxHealth();
-            if (healOnApply > 0 && this.getHealth() < newMax) {
-                this.setHealth(Math.min(newMax, this.getHealth() + healOnApply));
+            float newMax = getMaxHealth();
+            if (healOnApply > 0 && getHealth() < newMax) {
+                setHealth(Math.min(newMax, getHealth() + healOnApply));
             }
-
         } else {
             if (!guardBuffApplied) return;
             guardBuffApplied = false;
 
-            if (armor != null) armor.removeModifier(GUARD_ARMOR_UUID);
-            if (maxHp != null) maxHp.removeModifier(GUARD_MAXHP_UUID);
+            if (armor != null) armor.removeModifier(BlueStudentMod.id("guard_armor"));
+            if (maxHp != null) maxHp.removeModifier(BlueStudentMod.id("guard_maxhp"));
 
-            // 現在HPが新max超えたら丸める
-            if (this.getHealth() > this.getMaxHealth()) {
-                this.setHealth(this.getMaxHealth());
+            if (getHealth() > getMaxHealth()) {
+                setHealth(getMaxHealth());
             }
         }
     }
@@ -734,27 +697,29 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
                 || lifeState == StudentLifeState.RECOVERING;
     }
 
-    // ===== 強制起床（事故フラグ解除を必ずここでやる）=====
-    private void forceWakeUp(ServerWorld sw, @Nullable BlockPos fallbackPos, boolean tryTurnOffBedAnim) {
+    private void forceWakeUp(ServerLevel sw, @Nullable BlockPos fallbackPos, boolean tryTurnOffBedAnim) {
         if (tryTurnOffBedAnim && respawnBedFoot != null) {
+            Entity blockEntity = null;
             var be = sw.getBlockEntity(respawnBedFoot);
-            if (be instanceof OnlyBedBlockEntity obe) obe.setSleepAnim(false);
+            if (be instanceof OnlyBedBlockEntity obe) {
+                obe.setSleepAnim(false);
+            }
         }
 
         BlockPos out = (respawnSafePos != null) ? respawnSafePos
-                : (fallbackPos != null ? fallbackPos : this.getBlockPos());
+                : (fallbackPos != null ? fallbackPos : blockPosition());
 
-        this.refreshPositionAndAngles(out.getX() + 0.5, out.getY(), out.getZ() + 0.5, this.getYaw(), this.getPitch());
-        this.setVelocity(0, 0, 0);
-        this.getNavigation().stop();
+        setPos(out.getX() + 0.5, out.getY(), out.getZ() + 0.5);
+        setYRot(getYRot());
+        setXRot(getXRot());
+        setDeltaMovement(Vec3.ZERO);
+        getNavigation().stop();
 
-        // 事故フラグ解除
-        this.setGhost(false);
-        this.setAiDisabled(false);
-        this.setNoGravity(false);
-        this.setInvulnerable(false);
+        setGhost(false);
+        setNoAi(false);
+        setNoGravity(false);
+        setInvulnerable(false);
 
-        // 状態クリア
         setLifeState(StudentLifeState.NORMAL);
         lifeTimer = 0;
         respawnBedFoot = null;
@@ -762,53 +727,40 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
     }
 
     private void tickLifeStateServer() {
-        ServerWorld sw = (ServerWorld) this.getWorld();
-
-
-
+        if (!(level() instanceof ServerLevel sw)) return;
 
         if (isLifeLocked()) {
-            this.setAiDisabled(true);
-            this.setNoGravity(true);
-            this.setGhost(true);
-            this.setInvulnerable(false);
+            setNoAi(true);
+            setNoGravity(true);
+            setGhost(true);
+            setInvulnerable(false);
         }
 
-
-
-
-        // ★復活系は Overworld でしか進めない（別次元死亡の安定化）
         if (isLifeLocked() && respawnBedFoot != null) {
-            ServerWorld ow = sw.getServer().getOverworld();
+            ServerLevel ow = sw.getServer().overworld();
             if (ow != null && sw != ow) {
                 queueTeleportToOverworldForRespawn(ow);
                 return;
             }
         }
 
-
-        // 復活処理中にベッドが壊れたら即復帰
-        boolean bedOk = (respawnBedFoot != null && isValidLinkedBed(sw, respawnBedFoot));
+        boolean bedOk = respawnBedFoot != null && isValidLinkedBed(sw, respawnBedFoot);
         if (!bedOk && isLifeLocked()) {
             StudentWorldState.get(sw.getServer()).clearBed(getStudentId());
-            forceWakeUp(sw, this.getBlockPos(), true);
-
+            forceWakeUp(sw, blockPosition(), true);
             return;
         }
 
         switch (lifeState) {
             case NORMAL -> {
-                // NORMALは常に復帰保証
-                this.setGhost(false);
-                this.setAiDisabled(false);
-                this.setNoGravity(false);
-                this.setInvulnerable(false);
-                return;
+                setGhost(false);
+                setNoAi(false);
+                setNoGravity(false);
+                setInvulnerable(false);
             }
-
             case EXITING -> {
-                this.setVelocity(0, 0, 0);
-                this.getNavigation().stop();
+                setDeltaMovement(Vec3.ZERO);
+                getNavigation().stop();
 
                 if (lifeTimer > 0) {
                     lifeTimer--;
@@ -818,10 +770,9 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
                 setLifeState(StudentLifeState.RESPAWN_DELAY);
                 lifeTimer = 10;
             }
-
             case RESPAWN_DELAY -> {
-                this.setVelocity(0, 0, 0);
-                this.getNavigation().stop();
+                setDeltaMovement(Vec3.ZERO);
+                getNavigation().stop();
 
                 if (lifeTimer > 0) {
                     lifeTimer--;
@@ -830,70 +781,75 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
 
                 setLifeState(StudentLifeState.WARPING_TO_BED);
             }
-
             case WARPING_TO_BED -> {
-                this.setVelocity(0, 0, 0);
-                this.getNavigation().stop();
+                setDeltaMovement(Vec3.ZERO);
+                getNavigation().stop();
 
-                Vec3d p = getSleepPos(sw, respawnBedFoot);
+                Vec3 p = getSleepPos(sw, respawnBedFoot);
                 float yaw = getBedYaw(sw, respawnBedFoot);
-                this.setYaw(yaw); this.setBodyYaw(yaw); this.setHeadYaw(yaw);
-                this.refreshPositionAndAngles(p.x, p.y, p.z, yaw, this.getPitch());
+                setYRot(yaw);
+                yBodyRot = yaw;
+                yHeadRot = yaw;
+                setPos(p.x, p.y, p.z);
 
                 var be = sw.getBlockEntity(respawnBedFoot);
-                if (be instanceof OnlyBedBlockEntity obe) obe.setSleepAnim(true);
+                if (be instanceof OnlyBedBlockEntity obe) {
+                    obe.setSleepAnim(true);
+                }
 
                 setLifeState(StudentLifeState.SLEEPING);
-                return;
             }
-
             case SLEEPING -> {
-                this.setVelocity(0, 0, 0);
-                this.getNavigation().stop();
+                setDeltaMovement(Vec3.ZERO);
+                getNavigation().stop();
 
-                Vec3d p = getSleepPos(sw, respawnBedFoot);
+                Vec3 p = getSleepPos(sw, respawnBedFoot);
                 float yaw = getBedYaw(sw, respawnBedFoot);
-                this.setYaw(yaw); this.setBodyYaw(yaw); this.setHeadYaw(yaw);
-                this.refreshPositionAndAngles(p.x, p.y, p.z, yaw, this.getPitch());
+                setYRot(yaw);
+                yBodyRot = yaw;
+                yHeadRot = yaw;
+                setPos(p.x, p.y, p.z);
 
                 setLifeState(StudentLifeState.RECOVERING);
             }
-
             case RECOVERING -> {
-                this.setVelocity(0, 0, 0);
-                this.getNavigation().stop();
+                setDeltaMovement(Vec3.ZERO);
+                getNavigation().stop();
 
-                Vec3d p = getSleepPos(sw, respawnBedFoot);
+                Vec3 p = getSleepPos(sw, respawnBedFoot);
                 float yaw = getBedYaw(sw, respawnBedFoot);
-                this.setYaw(yaw); this.setBodyYaw(yaw); this.setHeadYaw(yaw);
-                this.refreshPositionAndAngles(p.x, p.y, p.z, yaw, this.getPitch());
+                setYRot(yaw);
+                yBodyRot = yaw;
+                yHeadRot = yaw;
+                setPos(p.x, p.y, p.z);
 
-                if (this.age % 30 == 0) {
-                    this.heal(1f);
+                if (tickCount % 30 == 0) {
+                    heal(1f);
                 }
 
-                if (this.getHealth() >= this.getMaxHealth()) {
-                    forceWakeUp(sw, this.getBlockPos(), true);
+                if (getHealth() >= getMaxHealth()) {
+                    forceWakeUp(sw, blockPosition(), true);
                 }
             }
-
             default -> setLifeState(StudentLifeState.NORMAL);
         }
     }
 
-    // ===== item pickup =====
     protected void tryPickupNearbyItems() {
-        Box box = this.getBoundingBox().expand(2.5);
-        var items = this.getWorld().getEntitiesByClass(ItemEntity.class, box, it ->
-                it.isAlive() && !it.getStack().isEmpty() && this.squaredDistanceTo(it) < 4.0
+        AABB box = getBoundingBox().inflate(2.5);
+        var items = level().getEntitiesOfClass(ItemEntity.class, box, it ->
+                it.isAlive() && !it.getItem().isEmpty() && distanceToSqr(it) < 4.0
         );
 
         for (ItemEntity it : items) {
-            ItemStack remain = it.getStack().copy();
+            ItemStack remain = it.getItem().copy();
             remain = insertIntoStudentInventory(remain);
 
-            if (remain.isEmpty()) it.discard();
-            else it.setStack(remain);
+            if (remain.isEmpty()) {
+                it.discard();
+            } else {
+                it.setItem(remain);
+            }
             break;
         }
     }
@@ -901,39 +857,39 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
     protected ItemStack insertIntoStudentInventory(ItemStack stack) {
         if (stack.isEmpty()) return ItemStack.EMPTY;
 
-        for (int i = 0; i < studentInventory.size(); i++) {
-            ItemStack cur = studentInventory.getStack(i);
+        for (int i = 0; i < studentInventory.getContainerSize(); i++) {
+            ItemStack cur = studentInventory.getItem(i);
             if (cur.isEmpty()) continue;
-            if (!ItemStack.canCombine(cur, stack)) continue;
+            if (!ItemStack.isSameItemSameComponents(cur, stack)) continue;
 
-            int space = cur.getMaxCount() - cur.getCount();
+            int space = cur.getMaxStackSize() - cur.getCount();
             if (space <= 0) continue;
 
             int move = Math.min(space, stack.getCount());
-            cur.increment(move);
-            stack.decrement(move);
+            cur.grow(move);
+            stack.shrink(move);
             if (stack.isEmpty()) {
-                studentInventory.markDirty();
+                studentInventory.setChanged();
                 return ItemStack.EMPTY;
             }
         }
 
-        for (int i = 0; i < studentInventory.size(); i++) {
-            if (studentInventory.getStack(i).isEmpty()) {
-                studentInventory.setStack(i, stack);
-                studentInventory.markDirty();
+        for (int i = 0; i < studentInventory.getContainerSize(); i++) {
+            if (studentInventory.getItem(i).isEmpty()) {
+                studentInventory.setItem(i, stack.copy());
+                stack = ItemStack.EMPTY;
+                studentInventory.setChanged();
                 return ItemStack.EMPTY;
             }
         }
 
-        studentInventory.markDirty();
+        studentInventory.setChanged();
         return stack;
     }
 
-    // ===== ghost =====
-    private void setGhost(boolean v) {
-        ghost = v;
-        this.noClip = v;
+    private void setGhost(boolean value) {
+        ghost = value;
+        noPhysics = value;
     }
 
     @Override
@@ -946,90 +902,55 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
         return !ghost && !isLifeLocked() && super.isPushable();
     }
 
-    @Override
-    public boolean collidesWith(Entity other) {
-        return !ghost && !isLifeLocked() && super.collidesWith(other);
-    }
-
-    private void setLifeState(StudentLifeState s) {
-        this.lifeState = s;
-        if (!this.getWorld().isClient) {
-            this.dataTracker.set(LIFE_STATE, s.ordinal());
+    private void setLifeState(StudentLifeState state) {
+        lifeState = state;
+        if (!level().isClientSide()) {
+            entityData.set(LIFE_STATE, state.ordinal());
         }
     }
 
     private StudentLifeState getLifeStateClientSafe() {
-        if (this.getWorld().isClient) {
-            int idx = this.dataTracker.get(LIFE_STATE);
-            idx = Math.max(0, Math.min(idx, StudentLifeState.values().length - 1));
+        if (level().isClientSide()) {
+            int idx = entityData.get(LIFE_STATE);
+            idx = Mth.clamp(idx, 0, StudentLifeState.values().length - 1);
             return StudentLifeState.values()[idx];
         }
-        return this.lifeState;
+        return lifeState;
     }
 
-    protected float getBedYaw(ServerWorld world, BlockPos bedFoot) {
+    protected float getBedYaw(ServerLevel world, BlockPos bedFoot) {
         BlockState st = world.getBlockState(bedFoot);
-
-        if (!(st.getBlock() instanceof OnlyBedBlock) || !st.contains(OnlyBedBlock.FACING)) {
-            return this.getYaw();
+        if (!(st.getBlock() instanceof OnlyBedBlock) || !st.hasProperty(OnlyBedBlock.FACING)) {
+            return getYRot();
         }
-
-        Direction dir = st.get(OnlyBedBlock.FACING);
-
-        // ★寝る向きだけ反転（180度）
-        return dir.getOpposite().asRotation();
-        // もしくは: return dir.asRotation() + 180.0f;
+        Direction dir = st.getValue(OnlyBedBlock.FACING);
+        return dir.getOpposite().toYRot();
     }
 
-
-    private boolean isValidLinkedBed(ServerWorld sw, @Nullable BlockPos bedFoot) {
+    private boolean isValidLinkedBed(ServerLevel sw, @Nullable BlockPos bedFoot) {
         if (sw == null || bedFoot == null) return false;
 
-        try {
-            sw.getChunk(bedFoot);
-        } catch (Exception e) {
-            return false;
-        }
-
-        BlockState foot;
-        try {
-            foot = sw.getBlockState(bedFoot);
-        } catch (Exception e) {
-            return false;
-        }
-
+        BlockState foot = sw.getBlockState(bedFoot);
         if (!(foot.getBlock() instanceof OnlyBedBlock)) return false;
-        if (!foot.contains(OnlyBedBlock.PART) || !foot.contains(OnlyBedBlock.STUDENT) || !foot.contains(OnlyBedBlock.FACING)) return false;
-        if (foot.get(OnlyBedBlock.PART) != BedPart.FOOT) return false;
-        if (foot.get(OnlyBedBlock.STUDENT) != getStudentId()) return false;
+        if (!foot.hasProperty(OnlyBedBlock.PART) || !foot.hasProperty(OnlyBedBlock.STUDENT) || !foot.hasProperty(OnlyBedBlock.FACING)) return false;
+        if (foot.getValue(OnlyBedBlock.PART) != BedPart.FOOT) return false;
+        if (foot.getValue(OnlyBedBlock.STUDENT) != getStudentId()) return false;
 
-        Direction facing = foot.get(OnlyBedBlock.FACING);
-        BlockPos headPos = bedFoot.offset(facing);
-
-        try {
-            sw.getChunk(headPos);
-        } catch (Exception e) {
-            return false;
-        }
-
-        BlockState head;
-        try {
-            head = sw.getBlockState(headPos);
-        } catch (Exception e) {
-            return false;
-        }
+        Direction facing = foot.getValue(OnlyBedBlock.FACING);
+        BlockPos headPos = bedFoot.relative(facing);
+        BlockState head = sw.getBlockState(headPos);
 
         if (!(head.getBlock() instanceof OnlyBedBlock)) return false;
-        if (!head.contains(OnlyBedBlock.PART) || !head.contains(OnlyBedBlock.STUDENT) || !head.contains(OnlyBedBlock.FACING)) return false;
-        if (head.get(OnlyBedBlock.PART) != BedPart.HEAD) return false;
-        if (head.get(OnlyBedBlock.STUDENT) != getStudentId()) return false;
-        if (head.get(OnlyBedBlock.FACING) != facing) return false;
-
-        return true;
+        if (!head.hasProperty(OnlyBedBlock.PART) || !head.hasProperty(OnlyBedBlock.STUDENT) || !head.hasProperty(OnlyBedBlock.FACING)) return false;
+        if (head.getValue(OnlyBedBlock.PART) != BedPart.HEAD) return false;
+        if (head.getValue(OnlyBedBlock.STUDENT) != getStudentId()) return false;
+        return head.getValue(OnlyBedBlock.FACING) == facing;
     }
 
-    // ===== ammo api =====
-    @Override public int getAmmoInMag() { return ammoInMag; }
+    @Override
+    public int getAmmoInMag() {
+        return ammoInMag;
+    }
 
     @Override
     public void consumeAmmo(int amount) {
@@ -1037,14 +958,14 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
         ammoInMag = Math.max(0, ammoInMag - amount);
     }
 
-    @Override public boolean isReloading() { return reloadTicksLeft > 0; }
+    @Override
+    public boolean isReloading() {
+        return reloadTicksLeft > 0;
+    }
 
     @Override
     public void startReload(WeaponSpec spec) {
-        if (spec.reloadTicks <= 0) return;
-        if (isReloading()) return;
-        if (spec.infiniteAmmo) return;
-
+        if (spec.reloadTicks <= 0 || isReloading() || spec.infiniteAmmo) return;
         reloadTicksLeft = spec.reloadTicks;
         requestReload();
     }
@@ -1059,140 +980,73 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
             ammoInMag = spec.magSize;
         }
     }
-
-
-
-
-
-    // ===== GeckoLib controllers =====
-    @Override
-    public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
-        controllers.add(new AnimationController<>(this, "main", 0, this::commonPredicate));
-    }
-
-    private PlayState commonPredicate(AnimationState<AbstractStudentEntity> state) {
+    private RawAnimation resolveMainAnimation() {
         StudentLifeState ls = getLifeStateClientSafe();
 
-        // 復活系は最優先
-        if (ls == StudentLifeState.EXITING) {
-            state.getController().setAnimation(EXIT);
-            return PlayState.CONTINUE;
-        }
-
-        if (ls == StudentLifeState.WARPING_TO_BED) {
-            state.getController().setAnimation(IDLE);
-            return PlayState.CONTINUE;
-        }
-
-        if (ls == StudentLifeState.SLEEPING || ls == StudentLifeState.RECOVERING) {
-            state.getController().setAnimation(SLEEP);
-            return PlayState.CONTINUE;
-        }
+        if (ls == StudentLifeState.EXITING) return EXIT;
+        if (ls == StudentLifeState.WARPING_TO_BED) return IDLE;
+        if (ls == StudentLifeState.SLEEPING || ls == StudentLifeState.RECOVERING) return SLEEP;
 
         RawAnimation ov = getOverrideAnimationIfAny();
-        if (ov != null) {
-            state.getController().setAnimation(ov);
-            return PlayState.CONTINUE;
-        }
+        if (ov != null) return ov;
 
-        if (clientEatTicks > 0) {
-            if (eatJustStarted) {
-                state.getController().forceAnimationReset();
-                eatJustStarted = false;
-            }
-            state.getController().setAnimation(ACTION);
-            return PlayState.CONTINUE;
-        }
+        if (clientEatTicks > 0) return ACTION;
+        if (clientDodgeTicks > 0 && getForm() != StudentForm.BR) return DODGE;
 
-
-
-// BR中は旧dodgeトリガーを無視（ログも止まる）
-        if (clientDodgeTicks > 0) {
-            if (getForm() != StudentForm.BR) {
-                if (dodgeJustStarted) {
-                    state.getController().forceAnimationReset();
-                    dodgeJustStarted = false;
-                }
-                state.getController().setAnimation(DODGE);
-                return PlayState.CONTINUE;
-            }
-        }
-
-        if (this.hasVehicle()) {
-            state.getController().setAnimation(SIT);
-            return PlayState.CONTINUE;
-        }
-
-        if (this.isTouchingWater()) {
-            state.getController().setAnimation(SWIM);
-            return PlayState.CONTINUE;
-        }
-
-        if (clientJumpTicks > 0) {
-            state.getController().setAnimation(JUMP);
-            return PlayState.CONTINUE;
-        }
-
-        if (!this.isOnGround() && this.getVelocity().y < -0.08) {
-            state.getController().setAnimation(FALL);
-            return PlayState.CONTINUE;
-        }
-
-
+        if (isPassenger()) return SIT;
+        if (isInWater()) return SWIM;
+        if (clientJumpTicks > 0) return JUMP;
+        if (!onGround() && getDeltaMovement().y < -0.08) return FALL;
 
         if (getForm() == StudentForm.BR) {
-
-            // ★BRアクションが変わったら必ずリセット（thenPlay再生保証）
-            int ver = this.dataTracker.get(BR_ACTION_VER);
-            if (ver != lastBrActionVerClient) {
-                lastBrActionVerClient = ver;
-                state.getController().forceAnimationReset();
+            StudentBrAction action = getBrActionForAnimationClient();
+            if (action != StudentBrAction.NONE) {
+                RawAnimation brAnim = getBrAnimationForAction(action);
+                if (brAnim != null) return brAnim;
             }
-
-            StudentBrAction a = getBrActionForAnimationClient();
-
-            // ★hold>0 の間だけ BRアクションを再生
-            if (a != StudentBrAction.NONE) {
-                RawAnimation brAnim = getBrAnimationForAction(a);
-                if (brAnim != null) {
-                    state.getController().setAnimation(brAnim);
-                    return PlayState.CONTINUE;
-                }
-            }
-
-            // ★BRアクション無しなら必ずロコモーションに落とす（空白防止）
-            state.getController().setAnimation(state.isMoving() ? RUN : IDLE);
-            return PlayState.CONTINUE;
+            return isActuallyMoving() ? RUN : IDLE;
         }
 
-        // ★BR中はSHOTトリガーを使わない（BR actionで表現する）
         if (clientShotTicks > 0 || clientShotHoldTicks > 0) {
             if (getForm() != StudentForm.BR) {
-                state.getController().setAnimation(SHOT);
-                return PlayState.CONTINUE;
+                if (shotJustStarted) {
+                    shotJustStarted = false;
+                    return RawAnimation.begin().thenPlay(ANIM_SHOT);
+                }
+                return SHOT;
             }
-            // BR中はアニメを変えないが、ここで return しない
         }
 
+        if (clientReloadTicks > 0) return RELOAD;
+
+        return isActuallyMoving() ? RUN : IDLE;
+    }
 
 
 
-        if (clientReloadTicks > 0) {
-            if (reloadJustStarted) {
-                state.getController().forceAnimationReset();
-                reloadJustStarted = false;
-            }
-            state.getController().setAnimation(RELOAD);
-            return PlayState.CONTINUE;
-        }
 
-        if (state.isMoving()) {
-            state.getController().setAnimation(RUN);
-            return PlayState.CONTINUE;
-        }
+    @Override
+    public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
+        controllers.add(
+                new AnimationController<>(
+                        "main",
+                        0,
+                        state -> {
+                            state.setAnimation(resolveMainAnimation());
+                            return PlayState.CONTINUE;
+                        }
+                )
+        );
+    }
 
-        state.getController().setAnimation(IDLE);
-        return PlayState.CONTINUE;
+
+
+
+
+    private boolean isActuallyMoving() {
+        Vec3 v = getDeltaMovement();
+        double horizontal = v.x * v.x + v.z * v.z;
+        return horizontal > 1.0e-5 || !getNavigation().isDone();
     }
 
     @Override
@@ -1200,300 +1054,259 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
         return geoCache;
     }
 
-    // ===== muzzle近似（サーバー用）=====
-    public Vec3d getMuzzlePosApprox() {
-        Vec3d eye = this.getEyePos();
+    public Vec3 getMuzzlePosApprox() {
+        Vec3 eye = getEyePosition();
+        Vec3 forward = getViewVector(1.0f).normalize();
+        Vec3 up = new Vec3(0, 1, 0);
+        Vec3 right = up.cross(forward).normalize();
 
-        Vec3d forward = this.getRotationVec(1.0f).normalize();
-        Vec3d up = new Vec3d(0, 1, 0);
-        Vec3d right = up.crossProduct(forward).normalize();
-
-        // ★StudentIdの値を使う（リリース版の 0.60,-0.50,0.18 が生きる）
-        Vec3d off = getStudentId().getMuzzleOffset(); // 例: (x=右, y=上下, z=前)
+        Vec3 off = getStudentId().getMuzzleOffset();
 
         return eye
-                .add(right.multiply(off.x))
-                .add(up.multiply(off.y))
-                .add(forward.multiply(off.z));
+                .add(right.scale(off.x))
+                .add(up.scale(off.y))
+                .add(forward.scale(off.z));
     }
-    public Vec3d getMuzzlePosFor(WeaponSpec spec) {
 
-        if (this.getWorld().isClient) {
+    public Vec3 getMuzzlePosFor(WeaponSpec spec) {
+        if (level().isClientSide()) {
             if (spec.muzzleLocator == WeaponSpec.MuzzleLocator.SUB_MUZZLE) {
-                if (this.clientSubMuzzleWorldPos != null) return this.clientSubMuzzleWorldPos;
+                if (clientSubMuzzleWorldPos != null) return clientSubMuzzleWorldPos;
             } else if (spec.muzzleLocator == WeaponSpec.MuzzleLocator.LEFT_SUB_MUZZLE) {
-                if (this.clientLeftSubMuzzleWorldPos != null) return this.clientLeftSubMuzzleWorldPos;
+                if (clientLeftSubMuzzleWorldPos != null) return clientLeftSubMuzzleWorldPos;
             } else if (spec.muzzleLocator == WeaponSpec.MuzzleLocator.RIGHT_SUB_MUZZLE) {
-                if (this.clientRightSubMuzzleWorldPos != null) return this.clientRightSubMuzzleWorldPos;
+                if (clientRightSubMuzzleWorldPos != null) return clientRightSubMuzzleWorldPos;
             } else {
-                if (this.clientMuzzleWorldPos != null) return this.clientMuzzleWorldPos;
+                if (clientMuzzleWorldPos != null) return clientMuzzleWorldPos;
             }
         }
 
-        // server / fallback（近似）
         return switch (spec.muzzleLocator) {
-            case SUB_MUZZLE -> getMuzzlePosApproxSub();
-            case LEFT_SUB_MUZZLE -> getMuzzlePosApproxSub();   // まずは同じ近似でOK
-            case RIGHT_SUB_MUZZLE -> getMuzzlePosApproxSub();  // まずは同じ近似でOK
+            case SUB_MUZZLE, LEFT_SUB_MUZZLE, RIGHT_SUB_MUZZLE -> getMuzzlePosApproxSub();
             default -> getMuzzlePosApproxMain();
         };
     }
 
-    public Vec3d getMuzzlePosApproxMain() {
-        return getMuzzlePosApprox(); // 今の既存近似を流用でOK
-    }
-
-    public Vec3d getMuzzlePosApproxSub() {
-        // サブ用の近似。まずはメインと同じでもいいが、ズレるならここを調整
+    public Vec3 getMuzzlePosApproxMain() {
         return getMuzzlePosApprox();
     }
 
-    //　マズル位置
-    private Vec3d clientMuzzleWorldPos = null;
-    private Vec3d clientSubMuzzleWorldPos = null;
-    private Vec3d clientLeftSubMuzzleWorldPos = null;
-    private Vec3d clientRightSubMuzzleWorldPos = null;
-
-    public void setClientMuzzleWorldPos(Vec3d pos) {
-        this.clientMuzzleWorldPos = pos;
+    public Vec3 getMuzzlePosApproxSub() {
+        return getMuzzlePosApprox();
     }
 
-    public Vec3d getClientMuzzleWorldPosOrApprox() {
-        return (clientMuzzleWorldPos != null) ? clientMuzzleWorldPos : getMuzzlePosApprox();
+    public void setClientMuzzleWorldPos(Vec3 pos) {
+        clientMuzzleWorldPos = pos;
     }
 
-    public void setClientSubMuzzleWorldPos(Vec3d pos) {
-        this.clientSubMuzzleWorldPos = pos;
+    public Vec3 getClientMuzzleWorldPosOrApprox() {
+        return clientMuzzleWorldPos != null ? clientMuzzleWorldPos : getMuzzlePosApprox();
     }
 
-    public Vec3d getClientSubMuzzleWorldPosOrApprox() {
-        return (clientSubMuzzleWorldPos != null) ? clientSubMuzzleWorldPos : getClientMuzzleWorldPosOrApprox();
+    public void setClientSubMuzzleWorldPos(Vec3 pos) {
+        clientSubMuzzleWorldPos = pos;
     }
 
-    public void setClientLeftSubMuzzleWorldPos(Vec3d pos) {
-        this.clientLeftSubMuzzleWorldPos = pos;
+    public Vec3 getClientSubMuzzleWorldPosOrApprox() {
+        return clientSubMuzzleWorldPos != null ? clientSubMuzzleWorldPos : getClientMuzzleWorldPosOrApprox();
     }
 
-    public void setClientRightSubMuzzleWorldPos(Vec3d pos) {
-        this.clientRightSubMuzzleWorldPos = pos;
+    public void setClientLeftSubMuzzleWorldPos(Vec3 pos) {
+        clientLeftSubMuzzleWorldPos = pos;
     }
-    // ===== movement tweak =====
+
+    public void setClientRightSubMuzzleWorldPos(Vec3 pos) {
+        clientRightSubMuzzleWorldPos = pos;
+    }
+
     @Override
-    public void tickMovement() {
-        if (!this.getWorld().isClient && isLifeLocked()) {
-            ServerWorld sw = (ServerWorld) this.getWorld();
+    public void aiStep() {
+        if (!level().isClientSide() && isLifeLocked()) {
+            if (level() instanceof ServerLevel sw) {
+                getNavigation().stop();
+                setDeltaMovement(Vec3.ZERO);
 
-            this.getNavigation().stop();
-            this.setVelocity(0, 0, 0);
-            this.velocityDirty = true;
-
-            if ((lifeState == StudentLifeState.WARPING_TO_BED
-                    || lifeState == StudentLifeState.SLEEPING
-                    || lifeState == StudentLifeState.RECOVERING)
-                    && respawnBedFoot != null) {
-
-                Vec3d p = getSleepPos(sw, respawnBedFoot);
-                float yaw = getBedYaw(sw, respawnBedFoot);
-                this.setYaw(yaw);
-                this.setBodyYaw(yaw);
-                this.setHeadYaw(yaw);
-                this.refreshPositionAndAngles(p.x, p.y, p.z, yaw, this.getPitch());
+                if ((lifeState == StudentLifeState.WARPING_TO_BED
+                        || lifeState == StudentLifeState.SLEEPING
+                        || lifeState == StudentLifeState.RECOVERING)
+                        && respawnBedFoot != null) {
+                    Vec3 p = getSleepPos(sw, respawnBedFoot);
+                    float yaw = getBedYaw(sw, respawnBedFoot);
+                    setYRot(yaw);
+                    yBodyRot = yaw;
+                    yHeadRot = yaw;
+                    setPos(p.x, p.y, p.z);
+                }
             }
-
+            super.aiStep();
             return;
         }
 
-        super.tickMovement();
+        super.aiStep();
 
-        // ★ここに追加（共通 no-fall 更新）
-        if (!this.getWorld().isClient) {
-            boolean onGroundNow = this.isOnGround();
+        if (!level().isClientSide()) {
+            boolean onGroundNow = onGround();
 
-            // 地上→空中に移った瞬間（崖落ち/ノックバック対策）
             if (bs_wasOnGround && !onGroundNow) {
-                noFallTicks = Math.max(noFallTicks, 20); // 最低1秒
+                noFallTicks = Math.max(noFallTicks, 20);
             }
             bs_wasOnGround = onGroundNow;
 
-            // 減算
             if (noFallTicks > 0) noFallTicks--;
-
-            // ★空中にいる限り、猶予があるなら切れないように維持
             if (!onGroundNow && noFallTicks > 0) {
                 noFallTicks = Math.max(noFallTicks, 5);
             }
-
-            // 着地したら“消す”のが好みならここで0にしてOK（安全側なら残しても良い）
-            // if (onGroundNow) noFallTicks = 0;
         }
 
-        if (this.getWorld().isClient) return;
+        if (level().isClientSide()) return;
 
-        if (this.isTouchingWater() && !this.hasVehicle()) {
-            Vec3d look = this.getRotationVec(1.0f);
-            Vec3d forward = new Vec3d(look.x, 0, look.z);
-            if (forward.lengthSquared() > 1e-6) {
-                forward = forward.normalize().multiply(0.03);
-                this.addVelocity(forward.x, 0.0, forward.z);
+        if (isInWater() && !isPassenger()) {
+            Vec3 look = getViewVector(1.0f);
+            Vec3 forward = new Vec3(look.x, 0, look.z);
+            if (forward.lengthSqr() > 1.0e-6) {
+                forward = forward.normalize().scale(0.03);
+                addDeltaMovement(new Vec3(forward.x, 0.0, forward.z));
             }
         }
     }
 
-    // ===== aim api =====
     public void setAimAngles(float yaw, float pitch) {
-        if (!getWorld().isClient) {
-            dataTracker.set(AIM_YAW, yaw);
-            dataTracker.set(AIM_PITCH, pitch);
+        if (!level().isClientSide()) {
+            entityData.set(AIM_YAW, yaw);
+            entityData.set(AIM_PITCH, pitch);
         }
     }
-    public float getAimYaw() { return dataTracker.get(AIM_YAW); }
-    public float getAimPitch() { return dataTracker.get(AIM_PITCH); }
 
-    // ===== NBT =====
-    @Override
-    public void writeCustomDataToNbt(NbtCompound nbt) {
-        super.writeCustomDataToNbt(nbt);
+    public float getAimYaw() {
+        return entityData.get(AIM_YAW);
+    }
 
-        nbt.putInt("StudentForm", this.dataTracker.get(FORM_ID));
+    public float getAimPitch() {
+        return entityData.get(AIM_PITCH);
+    }
 
-        nbt.putInt("DimTransferCooldown", dimTransferCooldown);
-        nbt.putBoolean("DimTransferQueued", dimTransferQueued);
+    private void saveStudentDataToTag(CompoundTag tag) {
+        tag.putInt("StudentForm", entityData.get(FORM_ID));
+        tag.putInt("DimTransferCooldown", dimTransferCooldown);
+        tag.putBoolean("DimTransferQueued", dimTransferQueued);
+        tag.putBoolean("ForcedSecurityOffline", forcedSecurityBecauseOwnerOffline);
+        tag.putInt("LifeState", lifeState.ordinal());
+        tag.putInt("LifeTimer", lifeTimer);
 
-        nbt.putBoolean("ForcedSecurityOffline", forcedSecurityBecauseOwnerOffline);
+        if (respawnBedFoot != null) tag.putLong("RespawnBedFoot", respawnBedFoot.asLong());
+        if (respawnSafePos != null) tag.putLong("RespawnSafePos", respawnSafePos.asLong());
 
-        nbt.putInt("LifeState", this.lifeState.ordinal());
-        nbt.putInt("LifeTimer", this.lifeTimer);
+        if (ownerUuid != null) {
+            tag.putString("Owner", ownerUuid.toString());
+        }
 
-        if (this.respawnBedFoot != null) nbt.putLong("RespawnBedFoot", this.respawnBedFoot.asLong());
-        if (this.respawnSafePos != null) nbt.putLong("RespawnSafePos", this.respawnSafePos.asLong());
-
-
-        if (ownerUuid != null) nbt.putUuid("Owner", ownerUuid);
-        nbt.putInt("AiMode", getAiMode().id);
+        tag.putInt("AiMode", getAiMode().id);
 
         if (securityPos != null) {
-            nbt.putInt("SecX", securityPos.getX());
-            nbt.putInt("SecY", securityPos.getY());
-            nbt.putInt("SecZ", securityPos.getZ());
+            tag.putInt("SecX", securityPos.getX());
+            tag.putInt("SecY", securityPos.getY());
+            tag.putInt("SecZ", securityPos.getZ());
         }
 
-        NbtCompound invTag = new NbtCompound();
+        CompoundTag invTag = new CompoundTag();
         studentInventory.writeNbt(invTag);
-        nbt.put("StudentInv", invTag);
+        tag.put("StudentInv", invTag);
 
-        nbt.putString("StudentId", getStudentId().asString());
-        nbt.putInt("Ammo", ammoInMag);
-        nbt.putInt("ReloadLeft", reloadTicksLeft);
+        tag.putString("StudentId", getStudentId().asString());
+        tag.putInt("Ammo", ammoInMag);
+        tag.putInt("ReloadLeft", reloadTicksLeft);
     }
 
-    @Override
-    public void readCustomDataFromNbt(NbtCompound nbt) {
-        super.readCustomDataFromNbt(nbt);
-
-        if (nbt.contains("StudentForm")) {
-            this.dataTracker.set(FORM_ID, nbt.getInt("StudentForm"));
+    private void loadStudentDataFromTag(CompoundTag tag) {
+        if (tag.contains("StudentForm")) {
+            entityData.set(FORM_ID, tag.getInt("StudentForm").orElse(0));
         }
 
+        dimTransferCooldown = tag.getInt("DimTransferCooldown").orElse(0);
+        dimTransferQueued = tag.getBoolean("DimTransferQueued").orElse(false);
+        forcedSecurityBecauseOwnerOffline = tag.getBoolean("ForcedSecurityOffline").orElse(false);
 
-        dimTransferCooldown = nbt.getInt("DimTransferCooldown");
-        dimTransferQueued = nbt.getBoolean("DimTransferQueued");
+        if (tag.contains("Owner")) {
+            String s = tag.getString("Owner").orElse("");
+            ownerUuid = s.isEmpty() ? null : UUID.fromString(s);
+        } else {
+            ownerUuid = null;
+        }
 
+        int modeId = tag.contains("AiMode")
+                ? tag.getInt("AiMode").orElse(getDefaultAiMode().id)
+                : getDefaultAiMode().id;
+        entityData.set(getAiModeTrackedData(), modeId);
 
+        if (tag.contains("SecX")) {
+            securityPos = new BlockPos(
+                    tag.getInt("SecX").orElse(0),
+                    tag.getInt("SecY").orElse(0),
+                    tag.getInt("SecZ").orElse(0)
+            );
+        } else {
+            securityPos = null;
+        }
 
+        if (tag.contains("StudentInv")) {
+            studentInventory.readNbt(tag.getCompound("StudentInv"));
+        }
 
-        forcedSecurityBecauseOwnerOffline = nbt.getBoolean("ForcedSecurityOffline");
+        ammoInMag = tag.contains("Ammo")
+                ? tag.getInt("Ammo").orElse(ammoInMag)
+                : ammoInMag;
 
-        ownerUuid = nbt.containsUuid("Owner") ? nbt.getUuid("Owner") : null;
-
-        int modeId = nbt.contains("AiMode") ? nbt.getInt("AiMode") : getDefaultAiMode().id;
-        this.dataTracker.set(getAiModeTrackedData(), StudentAiMode.fromId(modeId));
-
-        if (nbt.contains("SecX")) {
-            securityPos = new BlockPos(nbt.getInt("SecX"), nbt.getInt("SecY"), nbt.getInt("SecZ"));
-        } else securityPos = null;
-
-        if (nbt.contains("StudentInv")) studentInventory.readNbt(nbt.getCompound("StudentInv"));
-
-        ammoInMag = nbt.contains("Ammo") ? nbt.getInt("Ammo") : ammoInMag;
-        reloadTicksLeft = nbt.contains("ReloadLeft") ? nbt.getInt("ReloadLeft") : 0;
+        reloadTicksLeft = tag.contains("ReloadLeft")
+                ? tag.getInt("ReloadLeft").orElse(0)
+                : 0;
 
         appliedStats = false;
 
-        // 事故フラグ強制解除
-        this.setInvulnerable(false);
-        this.setNoGravity(false);
-        this.noClip = false;
-        this.setAiDisabled(false);
-        this.ghost = false;
+        setInvulnerable(false);
+        setNoGravity(false);
+        noPhysics = false;
+        setNoAi(false);
+        ghost = false;
 
-
-        if (nbt.contains("LifeState")) {
-            int idx = nbt.getInt("LifeState");
-            idx = Math.max(0, Math.min(idx, StudentLifeState.values().length - 1));
-            this.lifeState = StudentLifeState.values()[idx];
-            this.dataTracker.set(LIFE_STATE, this.lifeState.ordinal());
+        if (tag.contains("LifeState")) {
+            int idx = Mth.clamp(
+                    tag.getInt("LifeState").orElse(0),
+                    0,
+                    StudentLifeState.values().length - 1
+            );
+            lifeState = StudentLifeState.values()[idx];
+            entityData.set(LIFE_STATE, lifeState.ordinal());
         }
 
-        this.lifeTimer = nbt.getInt("LifeTimer");
+        lifeTimer = tag.getInt("LifeTimer").orElse(0);
 
-        this.respawnBedFoot = nbt.contains("RespawnBedFoot")
-                ? BlockPos.fromLong(nbt.getLong("RespawnBedFoot")) : null;
+        respawnBedFoot = tag.contains("RespawnBedFoot")
+                ? BlockPos.of(tag.getLong("RespawnBedFoot").orElse(0L))
+                : null;
 
-        this.respawnSafePos = nbt.contains("RespawnSafePos")
-                ? BlockPos.fromLong(nbt.getLong("RespawnSafePos")) : null;
+        respawnSafePos = tag.contains("RespawnSafePos")
+                ? BlockPos.of(tag.getLong("RespawnSafePos").orElse(0L))
+                : null;
 
+        eatingSlot = -1;
+        eatingServerTicks = 0;
 
-        this.eatingSlot = -1;
-        this.eatingServerTicks = 0;
-
-        // ガード解除（念のため）
         guardBuffApplied = false;
-        var armor = this.getAttributeInstance(EntityAttributes.GENERIC_ARMOR);
-        var maxHp = this.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH);
-        if (armor != null) armor.removeModifier(GUARD_ARMOR_UUID);
-        if (maxHp != null) maxHp.removeModifier(GUARD_MAXHP_UUID);
+        AttributeInstance armor = getAttribute(Attributes.ARMOR);
+        AttributeInstance maxHp = getAttribute(Attributes.MAX_HEALTH);
+
+        if (armor != null) {
+            armor.removeModifier(BlueStudentMod.id("guard_armor"));
+        }
+        if (maxHp != null) {
+            maxHp.removeModifier(BlueStudentMod.id("guard_maxhp"));
+        }
     }
 
-    @Override
-    protected void initDataTracker() {
-        super.initDataTracker();
-
-        this.dataTracker.startTracking(LIFE_STATE, StudentLifeState.NORMAL.ordinal());
-        this.dataTracker.startTracking(DODGE_TRIGGER, 0);
-        this.dataTracker.startTracking(EAT_TRIGGER, 0);
-
-        this.dataTracker.startTracking(AIM_YAW, 0f);
-        this.dataTracker.startTracking(AIM_PITCH, 0f);
-
-        this.dataTracker.startTracking(getAiModeTrackedData(), getDefaultAiMode());
-
-        this.dataTracker.startTracking(SHOT_TRIGGER, 0);
-        this.dataTracker.startTracking(RELOAD_TRIGGER, 0);
-
-        this.dataTracker.startTracking(FORM_ID, 0);
-        this.dataTracker.startTracking(BR_ACTION_ID, com.licht_meilleur.blue_student.student.StudentBrAction.NONE.ordinal());
-        this.dataTracker.startTracking(BR_ACTION_HOLD, 0);
-
-        this.dataTracker.startTracking(LAST_SHOT_KIND, 0); //
-        this.dataTracker.startTracking(BR_ACTION_VER, 0);
-
-
-    }
-
-
-    // ===== remove =====
     @Override
     public void remove(RemovalReason reason) {
-
-        // ★ 次元移動中は state を消さない（既存）
-        if (reason == RemovalReason.CHANGED_DIMENSION) {
-            super.remove(reason);
-            return;
-        }
-
-        // ★ チャンクアンロード/プレイヤー離脱等で一時的に消える場合も state を消さない
-        //   （後でチャンク再ロード時に復活する前提）
-        if (reason == RemovalReason.UNLOADED_TO_CHUNK
+        if (reason == RemovalReason.CHANGED_DIMENSION
+                || reason == RemovalReason.UNLOADED_TO_CHUNK
                 || reason == RemovalReason.UNLOADED_WITH_PLAYER) {
             super.remove(reason);
             return;
@@ -1501,182 +1314,165 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
 
         super.remove(reason);
 
-        // ここから下は「本当に消えた」ケースだけでOK
-        if (this.getWorld().isClient) return;
+        if (level().isClientSide()) return;
 
-        if (this.getWorld() instanceof ServerWorld sw) {
+        if (level() instanceof ServerLevel sw) {
             StudentWorldState st = StudentWorldState.get(sw);
-            var cur = st.getStudentUuid(getStudentId());
-            if (cur != null && cur.equals(this.getUuid())) {
+            UUID cur = st.getStudentUuid(getStudentId());
+            if (cur != null && cur.equals(getUUID())) {
                 st.clearStudent(getStudentId());
             }
         }
     }
 
     @Override
-    public boolean canImmediatelyDespawn(double distanceSquared) {
+    public boolean removeWhenFarAway(double distanceSquared) {
         return false;
     }
 
-    @Override
-    public boolean cannotDespawn() {
-        return true;
-    }
-
-
-    // exit演出用（あなたの既存実装に合わせて）
     public void requestExit() {
-        // あなたの実装に合わせてください（必要ならTrackedDataを追加して++）
     }
 
-    // ===== Rendererが参照する（右手表示用）=====
     public int getEatingSlotForRender() {
         return eatingSlot;
     }
 
     public ItemStack getEatingStackForRender() {
-        if (eatingSlot < 0) return ItemStack.EMPTY;
-        if (eatingSlot >= studentInventory.size()) return ItemStack.EMPTY;
-        return studentInventory.getStack(eatingSlot);
+        if (eatingSlot < 0 || eatingSlot >= studentInventory.getContainerSize()) return ItemStack.EMPTY;
+        return studentInventory.getItem(eatingSlot);
     }
 
-    // ===== security =====
     @Override
-    public BlockPos getSecurityPos() { return securityPos; }
+    public BlockPos getSecurityPos() {
+        return securityPos;
+    }
 
     @Override
-    public void setSecurityPos(BlockPos pos) { this.securityPos = pos; }
+    public void setSecurityPos(BlockPos pos) {
+        securityPos = pos;
+    }
 
     @Override
-    protected void applyDamage(DamageSource source, float amount) {
-        if (this.getWorld().isClient) {
-            super.applyDamage(source, amount);
-            return;
+    public boolean hurtServer(ServerLevel level, net.minecraft.world.damagesource.DamageSource source, float amount) {
+        if (noFallTicks > 0 && source.is(net.minecraft.world.damagesource.DamageTypes.FALL)) {
+            return false;
         }
 
-        if (isLifeLocked()) return;
+        if (isLifeLocked()) return false;
 
-        // ===== DOT(継続ダメージ) を “被弾リアクション” 扱いにしない =====
-        // ざっくり：微小ダメージはDOTとして扱う（毒/燃焼/ウィザー等のtickが大体ここに入る）
-        // ※閾値は好みで調整（1.0〜2.0が無難）
         if (amount <= 1.0f) {
-            int prevHurt = this.hurtTime;
-            super.applyDamage(source, amount);
-
-            // ★hurtTime を戻して「被弾した」扱いにしない
-            // （CombatGoal の gotHitThisTick を抑止できる）
-            this.hurtTime = Math.min(this.hurtTime, prevHurt);
-
-            return;
+            int prevHurt = hurtTime;
+            boolean result = super.hurtServer(level, source, amount);
+            hurtTime = Math.min(hurtTime, prevHurt);
+            return result;
         }
 
-        float after = this.getHealth() - amount;
-
+        float after = getHealth() - amount;
         if (after <= 0.5f) {
-            startBedRespawn((ServerWorld) this.getWorld());
-            return;
+            startBedRespawn(level);
+            return false;
         }
 
-        super.applyDamage(source, amount);
+        return super.hurtServer(level, source, amount);
     }
 
-    // ====== ベッド復活：Overworld固定版（インベントリ保持）=====
-    private void startBedRespawn(ServerWorld sw) {
+    private void startBedRespawn(ServerLevel sw) {
         MinecraftServer server = sw.getServer();
-        ServerWorld overworld = server.getOverworld();
-
+        ServerLevel overworld = server.overworld();
         StudentWorldState st = StudentWorldState.get(server);
 
-        // 1) state優先
         BlockPos bed = st.getBed(getStudentId());
 
-        // 2) 後方互換：BedLinkManager（同一セッション内で有効）
+        BlueStudentMod.LOGGER.info(
+                "[BlueStudent] startBedRespawn student={} owner={} bed={}",
+                getStudentId().asString(),
+                ownerUuid,
+                StudentWorldState.get(sw.getServer()).getBed(getStudentId())
+        );
+
         if (bed == null && ownerUuid != null) {
             bed = BedLinkManager.getBedPos(ownerUuid, getStudentId());
-            if (bed != null) st.setBed(getStudentId(), bed); // ★stateへ移す
+            if (bed != null) st.setBed(getStudentId(), bed);
         }
 
-        // 3) 最後の保険：Overworldで近くをスキャン（昔の挙動）
         if (bed == null) {
-            bed = findNearestBedFoot(overworld, getStudentId(), this.getBlockPos(), 96);
-            if (bed != null) st.setBed(getStudentId(), bed); // ★stateへ移す
+            bed = findNearestBedFoot(overworld, getStudentId(), blockPosition(), 96);
+            if (bed != null) st.setBed(getStudentId(), bed);
         }
 
-        this.respawnBedFoot = null;
-        this.respawnSafePos = null;
+        respawnBedFoot = null;
+        respawnSafePos = null;
 
         if (bed == null) {
             st.clearStudent(getStudentId());
-            this.discard();
+            discard();
             return;
         }
 
         if (!isValidLinkedBed(overworld, bed)) {
             st.clearBed(getStudentId());
             st.clearStudent(getStudentId());
-            this.discard();
+            discard();
             return;
         }
 
-        this.respawnBedFoot = bed;
-        this.respawnSafePos = findSafeRespawnPosNearBed(overworld, bed);
+        respawnBedFoot = bed;
+        respawnSafePos = findSafeRespawnPosNearBed(overworld, bed);
 
-        this.setHealth(1f);
-        this.getNavigation().stop();
-        this.setVelocity(0, 0, 0);
+        setHealth(1f);
+        getNavigation().stop();
+        setDeltaMovement(Vec3.ZERO);
 
-        this.setAiDisabled(true);
-        this.setNoGravity(true);
-        this.setGhost(true);
-        this.setInvulnerable(false);
+        setNoAi(true);
+        setNoGravity(true);
+        setGhost(true);
+        setInvulnerable(false);
 
-        this.requestExit();
-
+        requestExit();
         setLifeState(StudentLifeState.EXITING);
-        this.lifeTimer = 60;
+        lifeTimer = 60;
 
-        if (this.getWorld() != overworld) {
+        if (level() != overworld) {
             queueTeleportToOverworldForRespawn(overworld);
         }
-        System.out.println("[BlueStudent] startBedRespawn");
-        System.out.println("  CurrentDim = " + sw.getRegistryKey().getValue());
-        System.out.println("  BedPos = " + bed);
-        System.out.println("  LifeState = " + lifeState);
-
-
     }
 
-
-
-    protected @Nullable BlockPos findNearestBedFoot(ServerWorld sw, StudentId sid, BlockPos origin, int r) {
+    protected @Nullable BlockPos findNearestBedFoot(ServerLevel sw, StudentId sid, BlockPos origin, int r) {
         BlockPos best = null;
-        double bestD2 = 1e18;
+        double bestD2 = 1.0E18;
 
-        BlockPos.Mutable m = new BlockPos.Mutable();
-        for (int dx = -r; dx <= r; dx++) for (int dz = -r; dz <= r; dz++) for (int dy = -4; dy <= 4; dy++) {
-            m.set(origin.getX()+dx, origin.getY()+dy, origin.getZ()+dz);
-            BlockState st = sw.getBlockState(m);
-            if (!(st.getBlock() instanceof OnlyBedBlock)) continue;
-            if (st.get(OnlyBedBlock.PART) != BedPart.FOOT) continue;
-            if (st.get(OnlyBedBlock.STUDENT) != sid) continue;
+        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+        for (int dx = -r; dx <= r; dx++) {
+            for (int dz = -r; dz <= r; dz++) {
+                for (int dy = -4; dy <= 4; dy++) {
+                    m.set(origin.getX() + dx, origin.getY() + dy, origin.getZ() + dz);
+                    BlockState st = sw.getBlockState(m);
+                    if (!(st.getBlock() instanceof OnlyBedBlock)) continue;
+                    if (st.getValue(OnlyBedBlock.PART) != BedPart.FOOT) continue;
+                    if (st.getValue(OnlyBedBlock.STUDENT) != sid) continue;
 
-            double d2 = m.getSquaredDistance(origin);
-            if (d2 < bestD2) { bestD2 = d2; best = m.toImmutable(); }
+                    double d2 = m.distSqr(origin);
+                    if (d2 < bestD2) {
+                        bestD2 = d2;
+                        best = m.immutable();
+                    }
+                }
+            }
         }
         return best;
     }
 
     @Nullable
-    private BlockPos findSafeRespawnPosNearBed(ServerWorld world, BlockPos bedFootPos) {
-        BlockPos base = bedFootPos.up();
-        BlockPos.Mutable m = new BlockPos.Mutable();
+    private BlockPos findSafeRespawnPosNearBed(ServerLevel world, BlockPos bedFootPos) {
+        BlockPos base = bedFootPos.above();
+        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
 
         for (int r = 0; r <= 2; r++) {
             for (int dx = -r; dx <= r; dx++) {
                 for (int dz = -r; dz <= r; dz++) {
                     m.set(base.getX() + dx, base.getY(), base.getZ() + dz);
                     if (isSafeStandPos(world, m)) {
-                        return m.toImmutable();
+                        return m.immutable();
                     }
                 }
             }
@@ -1684,21 +1480,20 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
         return base;
     }
 
-    private boolean isSafeStandPos(ServerWorld world, BlockPos pos) {
-        BlockPos below = pos.down();
-        var belowState = world.getBlockState(below);
+    private boolean isSafeStandPos(ServerLevel world, BlockPos pos) {
+        BlockPos below = pos.below();
+        BlockState belowState = world.getBlockState(below);
 
         if (belowState.isAir()) return false;
         if (belowState.getCollisionShape(world, below).isEmpty()) return false;
         if (!world.getFluidState(below).isEmpty()) return false;
 
         if (!world.getBlockState(pos).getCollisionShape(world, pos).isEmpty()) return false;
-        if (!world.getBlockState(pos.up()).getCollisionShape(world, pos.up()).isEmpty()) return false;
+        if (!world.getBlockState(pos.above()).getCollisionShape(world, pos.above()).isEmpty()) return false;
 
         return true;
     }
 
-    // Goalから参照するだけの薄い公開API
     public boolean isLifeLockedForGoal() {
         return isLifeLocked();
     }
@@ -1708,86 +1503,79 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
     }
 
     public void startEatingVisualFromGoal(int slot, int ticks) {
-        this.eatingSlot = slot;
-        this.eatingServerTicks = ticks;
+        eatingSlot = slot;
+        eatingServerTicks = ticks;
     }
 
-    // ===== skill common（未実装のため無効化中）=====
     private void tickSkillCommon() {
         if (skillCooldownTicks > 0) skillCooldownTicks--;
 
         if (skillActiveTicksLeft > 0) {
             skillActiveTicksLeft--;
-
-            // ★ スキル未実装なので何もしない
             if (skillActiveTicksLeft == 0) {
                 skillCooldownTicks = 0;
             }
         }
     }
 
+    public boolean isSkillActive() {
+        return skillActiveTicksLeft > 0;
+    }
 
-    public boolean isSkillActive() { return skillActiveTicksLeft > 0; }
-    public boolean canStartSkill() { return skillCooldownTicks <= 0 && skillActiveTicksLeft <= 0; }
+    public boolean canStartSkill() {
+        return skillCooldownTicks <= 0 && skillActiveTicksLeft <= 0;
+    }
 
     public void startSkillNow() {
         if (!canStartSkill()) return;
-
-        // ★ スキル未実装なので「時間だけ消費」
-        skillActiveTicksLeft = 40; // 仮：2秒くらい（適当でOK）
-
-        skillTrigger++; // アニメ用だけ残してOK
+        skillActiveTicksLeft = 40;
+        skillTrigger++;
     }
 
-
-    // ===== エイム補正（あなたの既存）=====
     public void faceTargetForShot(LivingEntity target, float maxYawStep, float maxPitchStep) {
         if (target == null) return;
 
-        Vec3d from = this.getEyePos();
-        Vec3d to = target.getEyePos();
-        Vec3d d = to.subtract(from);
+        Vec3 from = getEyePosition();
+        Vec3 to = target.getEyePosition();
+        Vec3 d = to.subtract(from);
 
         double dx = d.x;
         double dy = d.y;
         double dz = d.z;
+        double horiz = Math.sqrt(dx * dx + dz * dz);
 
-        double horiz = Math.sqrt(dx*dx + dz*dz);
+        float targetYaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
+        float targetPitch = (float) (-Math.toDegrees(Math.atan2(dy, horiz)));
 
-        float targetYaw = (float)(Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
-        float targetPitch = (float)(-Math.toDegrees(Math.atan2(dy, horiz)));
+        float newYaw = approachAngle(getYRot(), targetYaw, maxYawStep);
+        float newPitch = approachAngle(getXRot(), targetPitch, maxPitchStep);
 
-        float newYaw = approachAngle(this.getYaw(), targetYaw, maxYawStep);
-        float newPitch = approachAngle(this.getPitch(), targetPitch, maxPitchStep);
-
-        this.setYaw(newYaw);
-        this.setPitch(newPitch);
-        this.setHeadYaw(newYaw);
-        this.bodyYaw = newYaw;
+        setYRot(newYaw);
+        setXRot(newPitch);
+        yHeadRot = newYaw;
+        yBodyRot = newYaw;
     }
 
     private float approachAngle(float cur, float target, float maxStep) {
-        float delta = net.minecraft.util.math.MathHelper.wrapDegrees(target - cur);
+        float delta = Mth.wrapDegrees(target - cur);
         if (delta > maxStep) delta = maxStep;
         if (delta < -maxStep) delta = -maxStep;
         return cur + delta;
     }
-    // Goal側から呼べるように公開
-    public boolean isBadFoodItemForGoal(net.minecraft.item.ItemStack st) {
-        return isBadFoodItem(st); // 既存privateを使う
+
+    public boolean isBadFoodItemForGoal(ItemStack st) {
+        return isBadFoodItem(st);
     }
 
-    // もし isBadFoodItem 自体が無いなら最低限これを追加
-    private boolean isBadFoodItem(net.minecraft.item.ItemStack st) {
+    private boolean isBadFoodItem(ItemStack st) {
         if (st == null || st.isEmpty()) return true;
 
-        // 安全確定のブラックリスト（好みで追加）
-        if (st.isOf(net.minecraft.item.Items.ROTTEN_FLESH)) return true;
-        if (st.isOf(net.minecraft.item.Items.POISONOUS_POTATO)) return true;
-        if (st.isOf(net.minecraft.item.Items.SPIDER_EYE)) return true;
-        if (st.isOf(net.minecraft.item.Items.PUFFERFISH)) return true;
-        if (st.isOf(net.minecraft.item.Items.CHORUS_FRUIT)) return true;
-        if (st.isOf(net.minecraft.item.Items.SUSPICIOUS_STEW)) return true;
+        if (st.is(Items.ROTTEN_FLESH)) return true;
+        if (st.is(Items.POISONOUS_POTATO)) return true;
+        if (st.is(Items.SPIDER_EYE)) return true;
+        if (st.is(Items.PUFFERFISH)) return true;
+        if (st.is(Items.CHORUS_FRUIT)) return true;
+        if (st.is(Items.SUSPICIOUS_STEW)) return true;
 
         return false;
     }
@@ -1799,17 +1587,14 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
 
     @Override
     public void setEvading(boolean v) {
-        this.evading = v;
+        evading = v;
     }
 
-
-    //@Override
     public LookRequest getLookRequest() {
         return lookReq;
     }
 
     private boolean canOverrideLook(int prio) {
-        // hold中で、今のprioの方が強いなら上書き拒否
         return !(lookReq.holdTicks > 0 && prio < lookReq.priority);
     }
 
@@ -1836,8 +1621,8 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
     }
 
     @Override
-    public void requestLookWorldDir(Vec3d d, int prio, int hold) {
-        if (d == null || d.lengthSquared() < 1e-6) return;
+    public void requestLookWorldDir(Vec3 d, int prio, int hold) {
+        if (d == null || d.lengthSqr() < 1.0e-6) return;
         if (!canOverrideLook(prio)) return;
         lookReq.type = LookIntentType.WORLD_DIR;
         lookReq.target = null;
@@ -1850,16 +1635,15 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
     public void requestLookMoveDir(int priority, int ticks) {
         if (ticks <= 0) return;
 
-        // 既存のLookTarget/LookAway等と同じ優先度ルールに合わせる
         if (!lookMoveDir || priority >= lookMoveDirPriority) {
-            this.lookMoveDir = true;
-            this.lookMoveDirPriority = priority;
-            this.lookMoveDirTicks = ticks;
+            lookMoveDir = true;
+            lookMoveDirPriority = priority;
+            lookMoveDirTicks = ticks;
         }
     }
 
     @Override
-    public void requestLookPos(Vec3d pos, int priority, int holdTicks) {
+    public void requestLookPos(Vec3 pos, int priority, int holdTicks) {
         if (pos == null) return;
         lookReq.type = LookIntentType.POS;
         lookReq.pos = pos;
@@ -1867,136 +1651,127 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
         lookReq.holdTicks = holdTicks;
     }
 
-
     @Override
     public LookRequest consumeLookRequest() {
         LookRequest copy = new LookRequest();
         copy.type = lookReq.type;
         copy.target = lookReq.target;
         copy.dir = lookReq.dir;
+        copy.pos = lookReq.pos;
         copy.priority = lookReq.priority;
         copy.holdTicks = lookReq.holdTicks;
-
         lookReq.clear();
         return copy;
     }
-    @Override
-    public boolean handleFallDamage(float fallDistance, float damageMultiplier, DamageSource source) {
-        if (noFallTicks > 0) return false;
-        return super.handleFallDamage(fallDistance, damageMultiplier, source);
-    }
+
+
+
 
     public void setKisakiSupportTicks(int ticks) {
         kisakiSupportTicks = Math.max(kisakiSupportTicks, ticks);
     }
+
     public void applyKisakiSupportBuff(boolean on, double addArmor, double addMaxHp, float healOnApply) {
-        var armor = this.getAttributeInstance(EntityAttributes.GENERIC_ARMOR);
-        var maxHp = this.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH);
+        AttributeInstance armor = getAttribute(Attributes.ARMOR);
+        AttributeInstance maxHp = getAttribute(Attributes.MAX_HEALTH);
 
         if (on) {
             if (kisakiBuffApplied) return;
             kisakiBuffApplied = true;
 
             if (armor != null && addArmor != 0) {
-                armor.removeModifier(KISAKI_ARMOR_UUID);
-                armor.addPersistentModifier(new EntityAttributeModifier(
-                        KISAKI_ARMOR_UUID, "kisaki_support_armor", addArmor,
-                        EntityAttributeModifier.Operation.ADDITION
+                armor.removeModifier(BlueStudentMod.id("kisaki_support_armor"));
+                armor.addOrReplacePermanentModifier(new AttributeModifier(
+                        BlueStudentMod.id("kisaki_support_armor"),
+                        addArmor,
+                        AttributeModifier.Operation.ADD_VALUE
                 ));
             }
 
             if (maxHp != null && addMaxHp != 0) {
-                maxHp.removeModifier(KISAKI_MAXHP_UUID);
-                maxHp.addPersistentModifier(new EntityAttributeModifier(
-                        KISAKI_MAXHP_UUID, "kisaki_support_maxhp", addMaxHp,
-                        EntityAttributeModifier.Operation.ADDITION
+                maxHp.removeModifier(BlueStudentMod.id("kisaki_support_maxhp"));
+                maxHp.addOrReplacePermanentModifier(new AttributeModifier(
+                        BlueStudentMod.id("kisaki_support_maxhp"),
+                        addMaxHp,
+                        AttributeModifier.Operation.ADD_VALUE
                 ));
             }
 
-            float newMax = this.getMaxHealth();
-            if (healOnApply > 0 && this.getHealth() < newMax) {
-                this.setHealth(Math.min(newMax, this.getHealth() + healOnApply));
+            float newMax = getMaxHealth();
+            if (healOnApply > 0 && getHealth() < newMax) {
+                setHealth(Math.min(newMax, getHealth() + healOnApply));
             }
-
         } else {
             if (!kisakiBuffApplied) return;
             kisakiBuffApplied = false;
 
-            if (armor != null) armor.removeModifier(KISAKI_ARMOR_UUID);
-            if (maxHp != null) maxHp.removeModifier(KISAKI_MAXHP_UUID);
+            if (armor != null) {
+                armor.removeModifier(BlueStudentMod.id("kisaki_support_armor"));
+            }
+            if (maxHp != null) {
+                maxHp.removeModifier(BlueStudentMod.id("kisaki_support_maxhp"));
+            }
 
-            if (this.getHealth() > this.getMaxHealth()) {
-                this.setHealth(this.getMaxHealth());
+            if (getHealth() > getMaxHealth()) {
+                setHealth(getMaxHealth());
             }
         }
     }
+
     public boolean hasKisakiSupportBuff() {
         return kisakiBuffApplied;
     }
 
     public int getShotTrigger() {
-        return this.dataTracker.get(SHOT_TRIGGER);
+        return entityData.get(SHOT_TRIGGER);
     }
-    // サーバーで撃った瞬間に呼ぶ（=トリガーを進める）
+
     public void bumpShotTrigger() {
-        if (this.getWorld().isClient) return;
-        this.dataTracker.set(SHOT_TRIGGER, this.dataTracker.get(SHOT_TRIGGER) + 1);
+        if (level().isClientSide()) return;
+        entityData.set(SHOT_TRIGGER, entityData.get(SHOT_TRIGGER) + 1);
     }
 
-
-
-    private void queueTeleportToOwnerDimension(ServerPlayerEntity ownerHint) {
-        if (this.getWorld().isClient) return;
-        if (dimTransferQueued) return;
-        if (dimTransferCooldown > 0) return;
-        if (ownerUuid == null) return;
+    private void queueTeleportToOwnerDimension(ServerPlayer ownerHint) {
+        if (level().isClientSide()) return;
+        if (dimTransferQueued || dimTransferCooldown > 0 || ownerUuid == null) return;
 
         dimTransferQueued = true;
         dimTransferCooldown = 40;
 
-        MinecraftServer server = ownerHint.getServer();
-
+        MinecraftServer server = ownerHint.level().getServer();
         server.execute(() -> {
             dimTransferQueued = false;
 
-            if (this.isRemoved() || !this.isAlive()) return;
-            if (!(this.getWorld() instanceof ServerWorld src)) return;
+            if (isRemoved() || !isAlive()) return;
+            if (!(level() instanceof ServerLevel src)) return;
 
-            ServerPlayerEntity owner = server.getPlayerManager().getPlayer(ownerUuid);
+            ServerPlayer owner = server.getPlayerList().getPlayer(ownerUuid);
             if (owner == null || !owner.isAlive()) return;
 
-            ServerWorld dest = owner.getServerWorld();
+            ServerLevel dest = owner.level();
             if (dest == src) return;
 
-            // pre-clean（重要）
-            this.stopRiding();
-            this.removeAllPassengers();
-            this.getNavigation().stop();
-            this.setVelocity(0, 0, 0);
-            this.velocityDirty = true;
-            this.fallDistance = 0;
+            stopRiding();
+            ejectPassengers();
+            getNavigation().stop();
+            setDeltaMovement(Vec3.ZERO);
+            fallDistance = 0;
 
-            BlockPos safe = findSafeNearPlayer(dest, owner.getBlockPos());
-
-            AbstractStudentEntity moved = teleportTo(dest, safe, owner.getYaw());
+            BlockPos safe = com.licht_meilleur.blue_student.util.DimensionTransferHelper.findSafeNear(dest, owner.blockPosition());
+            AbstractStudentEntity moved = teleportTo(dest, safe, owner.getYRot());
             if (moved == null) return;
 
-            moved.setVelocity(0, 0, 0);
+            moved.setDeltaMovement(Vec3.ZERO);
             moved.getNavigation().stop();
-            moved.velocityDirty = true;
-
             moved.dimTransferCooldown = Math.max(moved.dimTransferCooldown, 40);
             moved.fallDistance = 0;
             moved.noFallTicks = Math.max(moved.noFallTicks, 20);
         });
     }
 
-
-
-    private void queueTeleportToOverworldForRespawn(ServerWorld overworld) {
-        if (this.getWorld().isClient) return;
-        if (owRespawnQueued) return;
-        if (owRespawnCooldown > 0) return;
+    private void queueTeleportToOverworldForRespawn(ServerLevel overworld) {
+        if (level().isClientSide()) return;
+        if (owRespawnQueued || owRespawnCooldown > 0) return;
 
         owRespawnQueued = true;
         owRespawnCooldown = 20;
@@ -2005,301 +1780,156 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
         server.execute(() -> {
             owRespawnQueued = false;
 
-            if (this.isRemoved() || !this.isAlive()) return;
-            if (!(this.getWorld() instanceof ServerWorld src)) return;
+            if (isRemoved() || !isAlive()) return;
+            if (!(level() instanceof ServerLevel src)) return;
 
-            ServerWorld ow = server.getOverworld();
-            if (ow == null) return;
-            if (src == ow) return;
+            ServerLevel ow = server.overworld();
+            if (ow == null || src == ow) return;
 
-            // pre-clean
-            this.stopRiding();
-            this.removeAllPassengers();
-            this.getNavigation().stop();
-            this.setVelocity(0, 0, 0);
-            this.velocityDirty = true;
-            this.fallDistance = 0;
+            stopRiding();
+            ejectPassengers();
+            getNavigation().stop();
+            setDeltaMovement(Vec3.ZERO);
+            fallDistance = 0;
 
-            // いったん「現在座標のまま」OWへ（次のlife処理でベッド位置に寄せ直す）
-            BlockPos p = this.getBlockPos();
-            TeleportTarget target = new TeleportTarget(
-                    new Vec3d(p.getX() + 0.5, p.getY(), p.getZ() + 0.5),
-                    Vec3d.ZERO,
-                    this.getYaw(),
-                    this.getPitch()
-            );
-
-            Entity teleported = FabricDimensions.teleport(this, ow, target);
-            if (teleported == null) {
-                System.out.println("[BlueStudent] FabricDimensions.teleport FAILED");
-                return;
-            }
-
-            System.out.println("[BlueStudent] FabricDimensions.teleport OK -> " +
-                    ((ServerWorld) teleported.getWorld()).getRegistryKey().getValue());
-
-            if (teleported instanceof AbstractStudentEntity moved) {
+            BlockPos p = blockPosition();
+            AbstractStudentEntity moved = teleportTo(ow, p, getYRot());
+            if (moved != null) {
                 moved.owRespawnCooldown = Math.max(moved.owRespawnCooldown, 20);
             }
         });
     }
 
 
-    private BlockPos findSafeNearPlayer(ServerWorld world, BlockPos base) {
-        BlockPos.Mutable m = new BlockPos.Mutable();
 
-        // 近い順に軽く探す（半径2・高さ±2）
-        for (int r = 0; r <= 2; r++) {
-            for (int dy = -2; dy <= 2; dy++) {
-                for (int dx = -r; dx <= r; dx++) {
-                    for (int dz = -r; dz <= r; dz++) {
-                        m.set(base.getX() + dx, base.getY() + dy, base.getZ() + dz);
-                        if (isSafeStandPos(world, m)) {
-                            return m.toImmutable();
-                        }
-                    }
-                }
-            }
-        }
-        return base.up(); // フォールバック
-    }
-    private @Nullable AbstractStudentEntity teleportTo(ServerWorld dest, BlockPos safe, float yaw) {
-        TeleportTarget target = new TeleportTarget(
-                new Vec3d(safe.getX() + 0.5, safe.getY(), safe.getZ() + 0.5),
-                Vec3d.ZERO,
-                yaw,
-                0f
+    private @Nullable AbstractStudentEntity teleportTo(ServerLevel dest, BlockPos safe, float yaw) {
+        return com.licht_meilleur.blue_student.util.DimensionTransferHelper.transferStudent(
+                this,
+                dest,
+                safe,
+                yaw
         );
-
-        Entity movedRaw = FabricDimensions.teleport(this, dest, target);
-        return (movedRaw instanceof AbstractStudentEntity moved) ? moved : null;
     }
-    public boolean teleportToWorldForCallback(ServerWorld dest, BlockPos spawn, float yaw) {
-        if (this.getWorld().isClient) return false;
-        if (isLifeLockedForGoal()) return false;
+
+    public boolean teleportToWorldForCallback(ServerLevel dest, BlockPos spawn, float yaw) {
+        if (level().isClientSide() || isLifeLockedForGoal()) return false;
 
         AbstractStudentEntity moved = teleportTo(dest, spawn, yaw);
         if (moved == null) return false;
 
-        moved.setVelocity(0,0,0);
+        moved.setDeltaMovement(Vec3.ZERO);
         moved.getNavigation().stop();
-        moved.velocityDirty = true;
         moved.fallDistance = 0;
         moved.noFallTicks = Math.max(moved.noFallTicks, 20);
         return true;
     }
 
     public boolean isLifeLockedPublic() {
-        return isLifeLocked(); // 既存privateを呼ぶだけ
-    }
-
-    private static final boolean BS_DEBUG = true;
-
-    private void bsLog(String tag) {
-        if (!BS_DEBUG) return;
-        if (!(this.getWorld() instanceof ServerWorld sw)) return;
-
-        String dim = sw.getRegistryKey().getValue().toString();
-        String ls = String.valueOf(this.lifeState);
-        String bed = String.valueOf(this.respawnBedFoot);
-        UUID u = this.getUuid();
-
-        System.out.println("[BlueStudent][" + tag + "] sid=" + getStudentId().asString()
-                + " uuid=" + u
-                + " dim=" + dim
-                + " life=" + ls
-                + " bed=" + bed
-                + " hp=" + this.getHealth() + "/" + this.getMaxHealth()
-                + " removed=" + this.isRemoved()
-                + " alive=" + this.isAlive());
+        return isLifeLocked();
     }
 
 
-    public void packAndDiscardForTransfer(ServerWorld currentWorld) {
-        if (this.getWorld().isClient) return;
-        if (packedForDimTransfer) return;
-        packedForDimTransfer = true;
-
-        bsLog("PACK_START");
-
-        var server = currentWorld.getServer();
-        var st = StudentWorldState.get(server);
-
-        NbtCompound full = new NbtCompound();
-        this.writeNbt(full);                 // ★全部入る（推奨）
-        st.setPacked(getStudentId(), full);  // ★永続に保存（後述）
-
-        // state上の「今はpacked中」を立てる
-        st.setPackedFlag(getStudentId(), true);
-
-        this.discard();
-        bsLog("PACK_DISCARD");
-    }
-
-    public static boolean spawnFromPacked(ServerWorld dest, StudentId sid, BlockPos spawnPos, float yaw) {
-        var server = dest.getServer();
-        var st = StudentWorldState.get(server);
-
-        NbtCompound packed = st.getPacked(sid);
-        if (packed == null) return false;
-
-        // entity生成
-        Entity raw = switch (sid) {
-            case SHIROKO -> BlueStudentMod.SHIROKO.create(dest);
-            case HOSHINO -> BlueStudentMod.HOSHINO.create(dest);
-            case HINA    -> BlueStudentMod.HINA.create(dest);
-            case ALICE   -> BlueStudentMod.ALICE.create(dest);
-            case KISAKI  -> BlueStudentMod.KISAKI.create(dest);
-            case MARIE  -> BlueStudentMod.MARIE.create(dest);
-            case HIKARI  -> BlueStudentMod.HIKARI.create(dest);
-            case NOZOMI  -> BlueStudentMod.NOZOMI.create(dest);
-
-        };
-
-        if (!(raw instanceof AbstractStudentEntity ase)) return false;
-
-        ase.readNbt(packed); // ★全部復元
-        ase.refreshPositionAndAngles(spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5, yaw, 0);
-
-        dest.spawnEntity(ase);
-
-        // state更新（uuid/dim/pos）
-        st.setStudent(sid, ase.getUuid(), dest, spawnPos);
-
-        // packed解除
-        st.setPackedFlag(sid, false);
-        st.clearPacked(sid);
-
-        ase.bsLog("UNPACK_SPAWN");
-        return true;
-    }
 
     private void handleFollowDimTransfer() {
-        if (!(getWorld() instanceof ServerWorld sw)) return;
-        if (ownerUuid == null) return;
-        if (isLifeLocked()) return;
-        if (getAiMode() != StudentAiMode.FOLLOW) return;
+        if (!(level() instanceof ServerLevel sw)) return;
+        if (ownerUuid == null || isLifeLocked() || getAiMode() != StudentAiMode.FOLLOW) return;
 
-        if (dimTransferCooldown > 0) { dimTransferCooldown--; return; }
+        if (dimTransferCooldown > 0) {
+            dimTransferCooldown--;
+            return;
+        }
         if (dimTransferQueued) return;
 
-        var server = sw.getServer();
-        ServerPlayerEntity owner = server.getPlayerManager().getPlayer(ownerUuid);
+        MinecraftServer server = sw.getServer();
+        ServerPlayer owner = server.getPlayerList().getPlayer(ownerUuid);
         if (owner == null) return;
 
-        ServerWorld dest = owner.getServerWorld();
+        ServerLevel dest = owner.level();
         if (dest == sw) return;
 
         dimTransferQueued = true;
-        dimTransferCooldown = 40; // 2秒
+        dimTransferCooldown = 40;
 
-        bsLog("FOLLOW_DIM_QUEUE");
 
         server.execute(() -> {
             dimTransferQueued = false;
-            if (this.isRemoved() || !this.isAlive()) return;
+            if (isRemoved() || !isAlive()) return;
 
-            // 1) packして消す
-            packAndDiscardForTransfer(sw);
-
-            // 2) dest側にspawn（owner付近）
-            BlockPos spawn = owner.getBlockPos().up();
-            spawnFromPacked(dest, getStudentId(), spawn, owner.getYaw());
+            com.licht_meilleur.blue_student.util.DimensionTransferHelper.packStudent(this, sw);
+            BlockPos spawn = owner.blockPosition().above();
+            com.licht_meilleur.blue_student.util.DimensionTransferHelper.spawnPackedStudent(dest, getStudentId(), spawn, owner.getYRot());
         });
     }
+
     @Override
-    public boolean canUsePortals() {
-        return false; // 生徒はポータルを使わない
+    public boolean canUsePortal(boolean allowPassengers) {
+        return false;
     }
 
+    private void tickFormFromEquipment() {
+        if (!(level() instanceof ServerLevel sw)) return;
 
-// ===== フォーム管理 =====
-private void tickFormFromEquipment() {
-    if (!(this.getWorld() instanceof ServerWorld sw)) return;
+        ItemStack equip = studentInventory.getBrEquipStack();
+        StudentForm desired = StudentEquipments.isBrEquipped(getStudentId(), equip)
+                ? StudentForm.BR
+                : StudentForm.NORMAL;
 
-    ItemStack equip = this.studentInventory.getBrEquipStack();
-    StudentForm desired = StudentEquipments.isBrEquipped(getStudentId(), equip) ? StudentForm.BR : StudentForm.NORMAL;
+        if (getForm() != desired) {
+            setForm(desired);
+            applyFormStatsAndAi(desired);
 
-    if (getForm() != desired) {
-        setForm(desired);
-        applyFormStatsAndAi(desired); // ★あなたが作る（防御/HP/AI切替）
-        // 永続化したいなら StudentWorldState に form 保存も後で追加
-    }
-}
-
-    private ItemStack getBrEquipStack() {
-        if (!(getStudentInventory() instanceof com.licht_meilleur.blue_student.inventory.StudentInventory si)) {
-            return ItemStack.EMPTY;
+            StudentWorldState.get(sw).setForm(getStudentId(), desired);
         }
-        return si.getBrEquipStack();
     }
 
     private void applyFormStatsAndAi(StudentForm f) {
-
-        var tough = this.getAttributeInstance(EntityAttributes.GENERIC_ARMOR_TOUGHNESS);
+        AttributeInstance tough = getAttribute(Attributes.ARMOR_TOUGHNESS);
         if (tough == null) return;
 
-        // いったん解除（NORMALに戻る時もここが効く）
-        tough.removeModifier(BR_TOUGH_UUID);
+        tough.removeModifier(BlueStudentMod.id("br_toughness"));
 
         if (f == StudentForm.BR) {
-            // 通常4.0 → +4.0 で 合計8.0 にする
-            tough.addPersistentModifier(new EntityAttributeModifier(
-                    BR_TOUGH_UUID,
-                    "br_toughness",
+            tough.addOrReplacePermanentModifier(new AttributeModifier(
+                    BlueStudentMod.id("br_toughness"),
                     4.0,
-                    EntityAttributeModifier.Operation.ADDITION
+                    AttributeModifier.Operation.ADD_VALUE
             ));
         }
     }
 
-
-
     public StudentForm getForm() {
-        // FORM_ID を int で持ってるなら
-        int v = this.dataTracker.get(FORM_ID);
-        return (v == 1) ? StudentForm.BR : StudentForm.NORMAL;
+        return entityData.get(FORM_ID) == 1 ? StudentForm.BR : StudentForm.NORMAL;
     }
 
     public void setForm(StudentForm f) {
-        this.dataTracker.set(FORM_ID, (f == StudentForm.BR) ? 1 : 0);
+        entityData.set(FORM_ID, f == StudentForm.BR ? 1 : 0);
     }
-
-
-
-
-    // ===== queue fire (channel) =====
 
     @Override
     public void queueFire(LivingEntity target, IStudentEntity.FireChannel ch) {
-        if (getWorld().isClient) return;
-        if (target == null) return;
+        if (level().isClientSide() || target == null) return;
         if (ch == null) ch = IStudentEntity.FireChannel.MAIN;
-
-        // ★clearしない：該当chだけ上書き
-        queuedFire.put(ch, target.getUuid());
+        queuedFire.put(ch, target.getUUID());
     }
 
     @Override
     public boolean hasQueuedFire(IStudentEntity.FireChannel ch) {
-        if (getWorld().isClient) return false;
+        if (level().isClientSide()) return false;
         if (ch == null) ch = IStudentEntity.FireChannel.MAIN;
         return queuedFire.get(ch) != null;
     }
 
     @Override
     public LivingEntity consumeQueuedFireTarget(IStudentEntity.FireChannel ch) {
-        if (getWorld().isClient) return null;
-        if (!(getWorld() instanceof ServerWorld sw)) return null;
+        if (level().isClientSide() || !(level() instanceof ServerLevel sw)) return null;
         if (ch == null) ch = IStudentEntity.FireChannel.MAIN;
 
         UUID id = queuedFire.remove(ch);
         if (id == null) return null;
 
         lastConsumedChannel = ch;
-
         Entity e = sw.getEntity(id);
-        return (e instanceof LivingEntity le) ? le : null;
+        return e instanceof LivingEntity le ? le : null;
     }
 
     @Override
@@ -2307,69 +1937,50 @@ private void tickFormFromEquipment() {
         return lastConsumedChannel;
     }
 
-
-
-
-    private com.licht_meilleur.blue_student.student.StudentBrAction brAction = com.licht_meilleur.blue_student.student.StudentBrAction.NONE;
-    private int brActionTicks = 0;
-
     @Override
     public void requestBrAction(StudentBrAction action, int holdTicks) {
-        if (this.getWorld().isClient) return;
+        if (level().isClientSide()) return;
 
         int newId = action.ordinal();
-        int curId = this.dataTracker.get(BR_ACTION_ID);
-        int curHold = this.dataTracker.get(BR_ACTION_HOLD);
+        int curId = entityData.get(BR_ACTION_ID);
+        int curHold = entityData.get(BR_ACTION_HOLD);
 
-        // ID更新
         if (curId != newId) {
-            this.dataTracker.set(BR_ACTION_ID, newId);
+            entityData.set(BR_ACTION_ID, newId);
         }
 
-        // hold更新（減る分はGoal側が管理してるので、ここは「最大」を入れておくと安定）
         int nextHold = Math.max(0, holdTicks);
-        this.dataTracker.set(BR_ACTION_HOLD, Math.max(curHold, nextHold));
+        entityData.set(BR_ACTION_HOLD, Math.max(curHold, nextHold));
 
-        // ★VERを進める条件：
-        // - アクションが変わった時
-        // - もしくは「新しく開始」(holdが増えた時) だけ
         if (curId != newId || nextHold > curHold) {
-            int v = this.dataTracker.get(BR_ACTION_VER);
-            this.dataTracker.set(BR_ACTION_VER, v + 1);
+            int v = entityData.get(BR_ACTION_VER);
+            entityData.set(BR_ACTION_VER, v + 1);
         }
     }
 
     public int getBrActionVersion() {
-        return this.dataTracker.get(BR_ACTION_VER);
+        return entityData.get(BR_ACTION_VER);
     }
 
-    // 毎tick減らす（AbstractStudentEntity.tick() か tickMovement() の最後あたりに）
     private void tickBrActionTimer() {
-        if (this.getWorld().isClient) return;
+        if (level().isClientSide()) return;
 
-        int hold = this.dataTracker.get(BR_ACTION_HOLD);
+        int hold = entityData.get(BR_ACTION_HOLD);
         if (hold > 0) {
-            hold--;
-            this.dataTracker.set(BR_ACTION_HOLD, hold);
-            // ★これを消す（BR Goalが次tickで上書きするので不要）
-            // if (hold <= 0) {
-            //     this.dataTracker.set(BR_ACTION_ID, StudentBrAction.NONE.ordinal());
-            // }
+            entityData.set(BR_ACTION_HOLD, hold - 1);
         }
     }
 
-    // 参照用（アニメコントローラが読める）
-    public com.licht_meilleur.blue_student.student.StudentBrAction getBrAction() {
-        int id = this.dataTracker.get(BR_ACTION_ID);
-        var vals = com.licht_meilleur.blue_student.student.StudentBrAction.values();
-        if (id < 0 || id >= vals.length) return com.licht_meilleur.blue_student.student.StudentBrAction.NONE;
+    public StudentBrAction getBrAction() {
+        int id = entityData.get(BR_ACTION_ID);
+        StudentBrAction[] vals = StudentBrAction.values();
+        if (id < 0 || id >= vals.length) return StudentBrAction.NONE;
         return vals[id];
     }
 
-    // ★サブクラスが「このBRアクションの時に再生するRawAnimation」を返す
     @Nullable
-    protected RawAnimation getBrAnimationForAction(com.licht_meilleur.blue_student.student.StudentBrAction a) {
-        return null; // デフォルト：BRアニメ無し
+    protected RawAnimation getBrAnimationForAction(StudentBrAction a) {
+        return null;
     }
 
     public boolean shouldLockBodyYawToMoveDir() {
@@ -2381,102 +1992,145 @@ private void tickFormFromEquipment() {
         if (lookMoveDirTicks <= 0) lookMoveDir = false;
 
         if (lookMoveDir) {
-            Vec3d v = this.getVelocity();
+            Vec3 v = getDeltaMovement();
             double vx = v.x;
             double vz = v.z;
 
-            // ナビ移動直後で速度が小さいときは暴れやすいのでガード
             if (vx * vx + vz * vz > 1.0e-4) {
-                float yaw = (float)(MathHelper.atan2(vz, vx) * (180.0 / Math.PI)) - 90.0f;
-
-                // 体を移動方向へ（headYawも揃える）
-                this.setYaw(yaw);
-                this.bodyYaw = yaw;
-                this.headYaw = yaw;
+                float yaw = (float) (Math.toDegrees(Math.atan2(vz, vx)) - 90.0);
+                setYRot(yaw);
+                yBodyRot = yaw;
+                yHeadRot = yaw;
             }
         }
     }
+
     public void addAmmoInMag(int add, int magSize) {
-        this.ammoInMag = Math.min(magSize, this.ammoInMag + add);
+        ammoInMag = Math.min(magSize, ammoInMag + add);
     }
-    // ========================================
-// 射撃時にナビを止めるかどうか
-// ========================================
+
     public boolean shouldStopNavigationForShot(boolean fireIsSub) {
-
-        // フォーム取得
-        StudentForm form = getForm();
-
-        // ① BRフォーム
-        if (form == StudentForm.BR) {
-
-            // BRは基本「止まらない」
-            // ただしメイン射撃だけ止めたいならここで分岐可能
-            // 例：
-            // return !fireIsSub;
-
+        if (getForm() == StudentForm.BR) {
             return false;
         }
-
-        // ② 通常フォーム
-        // 通常は止める
         return true;
     }
 
     @Override
-    public void requestLookDir(Vec3d dir, int yawSpeed, int pitchSpeed) {
-        if (dir == null) return;
-        if (dir.lengthSquared() < 1.0e-6) return;
-
-        // 既存の「見る仕組み」に寄せる：LookTargetがあるならそれを使うのが一番安全
-        // ＝「いまいる位置 + dir * 100」を疑似ターゲットにする
-        Vec3d p = this.getPos().add(dir.normalize().multiply(100.0));
-        this.requestLookPos(p, yawSpeed, pitchSpeed);
-        // ↑ もし requestLookPos が無い場合は下の代替を使う（次のブロック参照）
+    public void requestLookDir(Vec3 dir, int yawSpeed, int pitchSpeed) {
+        if (dir == null || dir.lengthSqr() < 1.0e-6) return;
+        Vec3 p = position().add(dir.normalize().scale(100.0));
+        requestLookPos(p, yawSpeed, pitchSpeed);
     }
 
     public StudentBrAction getBrActionServer() {
-        if (this.getWorld().isClient) return StudentBrAction.NONE;
-        int id = this.dataTracker.get(BR_ACTION_ID);
+        if (level().isClientSide()) return StudentBrAction.NONE;
+        int id = entityData.get(BR_ACTION_ID);
         StudentBrAction[] vals = StudentBrAction.values();
         if (id < 0 || id >= vals.length) return StudentBrAction.NONE;
         return vals[id];
     }
+
     public boolean isBrActionActiveServer() {
         if (getForm() != StudentForm.BR) return false;
         StudentBrAction a = getBrActionServer();
         if (a == null || a == StudentBrAction.NONE || a == StudentBrAction.IDLE) return false;
-        return this.dataTracker.get(BR_ACTION_HOLD) > 0;
+        return entityData.get(BR_ACTION_HOLD) > 0;
     }
 
-    // ===== BR combat goal 用：被弾リアクション抑制 =====
     public boolean shouldIgnoreHitReactNow() {
-        // 復活/無敵処理中は当然無視
         if (isLifeLocked()) return true;
-
-        // 回避中はGoal側で止めてるけど念のため
         if (isEvading()) return true;
-
-        // BRアクション中（DODGEなど）に“毒のtick”で割り込むと崩れるので無視
-        if (getForm() == StudentForm.BR && isBrActionActiveServer()) return true;
-
-        return false;
+        return getForm() == StudentForm.BR && isBrActionActiveServer();
     }
+
     protected StudentBrAction getBrActionForAnimationClient() {
-        // ★holdが0なら「アクション無し」とみなす（ID残留による空白再生を防ぐ）
-        int hold = this.dataTracker.get(BR_ACTION_HOLD);
+        int hold = entityData.get(BR_ACTION_HOLD);
         if (hold <= 0) {
-            // clientの“最後の少し保持”をやるならここ（任意）
             if (brHoldTicksClient > 0) return lastBrActionClient;
             return StudentBrAction.NONE;
         }
 
-        StudentBrAction a = getBrAction(); // BR_ACTION_ID
+        StudentBrAction a = getBrAction();
         if (a == null) return StudentBrAction.NONE;
 
         lastBrActionClient = a;
-        brHoldTicksClient = getBrActionHoldTicks(); // 任意
+        brHoldTicksClient = getBrActionHoldTicks();
         return a;
+    }
+//次元移動
+    public boolean isPackedForDimTransfer() {
+        return packedForDimTransfer;
+    }
+
+    public void setPackedForDimTransfer(boolean value) {
+        this.packedForDimTransfer = value;
+    }
+
+    public void saveStudentDataToTagForTransfer(CompoundTag tag) {
+        saveStudentDataToTag(tag);
+    }
+
+    public void loadStudentDataFromTagForTransfer(CompoundTag tag) {
+        loadStudentDataFromTag(tag);
+    }
+
+    // ===== Render / model helper =====
+
+    public StudentForm getRenderForm() {
+        return this.getForm();
+    }
+
+    public float getRenderAimYawDeg() {
+        return this.getAimYaw();
+    }
+
+    public float getRenderAimPitchDeg() {
+        return this.getAimPitch();
+    }
+
+    public float getHeadYawDegForRender() {
+        return clampDeg(this.getRenderAimYawDeg(), -60.0f, 60.0f);
+    }
+
+    public float getHeadPitchDegForRender() {
+        return clampDeg(this.getRenderAimPitchDeg(), -40.0f, 30.0f);
+    }
+
+    public float getArmYawDegForRender() {
+        return clampDeg(this.getRenderAimYawDeg(), -35.0f, 35.0f);
+    }
+
+    public float getArmPitchDegForRender() {
+        return clampDeg(this.getRenderAimPitchDeg(), -45.0f, 45.0f);
+    }
+
+    public float getHeadYawRadForRender() {
+        return degToRad(this.getHeadYawDegForRender());
+    }
+
+    public float getHeadPitchRadForRender() {
+        return degToRad(this.getHeadPitchDegForRender());
+    }
+
+    public float getArmYawRadForRender() {
+        return degToRad(this.getArmYawDegForRender());
+    }
+
+    public float getArmPitchRadForRender() {
+        return degToRad(this.getArmPitchDegForRender());
+    }
+
+    public boolean isBrFormForRender() {
+        return this.getRenderForm() == StudentForm.BR;
+    }
+
+    protected static float degToRad(float deg) {
+        return deg * ((float) Math.PI / 180.0F);
+    }
+
+    protected static float clampDeg(float value, float min, float max) {
+        return Math.max(min, Math.min(max, value));
     }
 
 }

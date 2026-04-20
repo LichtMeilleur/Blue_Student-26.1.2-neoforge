@@ -1,56 +1,57 @@
 package com.licht_meilleur.blue_student.entity;
 
-import com.licht_meilleur.blue_student.BlueStudentMod;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.MovementType;
-import net.minecraft.entity.data.DataTracker;
-import net.minecraft.entity.data.TrackedData;
-import net.minecraft.entity.data.TrackedDataHandlerRegistry;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
+import com.geckolib.animatable.GeoEntity;
+import com.geckolib.animatable.instance.AnimatableInstanceCache;
+import com.geckolib.animatable.manager.AnimatableManager;
+import com.geckolib.animation.AnimationController;
+import com.geckolib.animation.RawAnimation;
+import com.geckolib.animation.object.PlayState;
+import com.geckolib.util.GeckoLibUtil;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.MoverType;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
+import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
-import software.bernie.geckolib.animatable.GeoEntity;
-import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
-import software.bernie.geckolib.core.animation.AnimatableManager;
-import software.bernie.geckolib.core.animation.AnimationController;
-import software.bernie.geckolib.core.animation.AnimationState;
-import software.bernie.geckolib.core.animation.RawAnimation;
-import software.bernie.geckolib.core.object.PlayState;
-import software.bernie.geckolib.util.GeckoLibUtil;
 
 import java.util.UUID;
 
 public class KisakiDragonEntity extends Entity implements GeoEntity {
 
-    // 0: FLY(run) / 1: COIL(buff)
-    private static final TrackedData<Integer> STATE =
-            DataTracker.registerData(KisakiDragonEntity.class, TrackedDataHandlerRegistry.INTEGER);
+    private static final EntityDataAccessor<Integer> STATE =
+            SynchedEntityData.defineId(KisakiDragonEntity.class, EntityDataSerializers.INT);
 
-    private static final int STATE_FLY  = 0;
+    private static final int STATE_FLY = 0;
     private static final int STATE_COIL = 1;
 
-    private static final RawAnimation RUN  = RawAnimation.begin().thenLoop("run");
+    private static final RawAnimation RUN = RawAnimation.begin().thenLoop("run");
     private static final RawAnimation BUFF = RawAnimation.begin().thenLoop("buff");
 
     private final AnimatableInstanceCache geoCache = GeckoLibUtil.createInstanceCache(this);
 
-    @Nullable private UUID ownerKisakiUuid;
-    @Nullable private UUID targetUuid;
+    @Nullable
+    private UUID ownerKisakiUuid;
+    @Nullable
+    private UUID targetUuid;
 
-    // coil演出用
     private int coilTicks = 0;
     private double coilAngle = 0.0;
 
-    public KisakiDragonEntity(EntityType<?> type, World world) {
-        super(type, world);
-        this.noClip = true;
+    public KisakiDragonEntity(EntityType<?> type, Level level) {
+        super(type, level);
+        this.noPhysics = true;
         this.setNoGravity(true);
     }
 
-    /** スポーン直後にGoalから設定 */
+
+
     public KisakiDragonEntity setOwnerAndTarget(@Nullable UUID ownerKisaki, @Nullable UUID target) {
         this.ownerKisakiUuid = ownerKisaki;
         this.targetUuid = target;
@@ -58,106 +59,99 @@ public class KisakiDragonEntity extends Entity implements GeoEntity {
     }
 
     @Override
-    protected void initDataTracker() {
-        this.dataTracker.startTracking(STATE, STATE_FLY);
-    }
-
-    @Override
-    protected void readCustomDataFromNbt(NbtCompound nbt) {
-        ownerKisakiUuid = nbt.containsUuid("OwnerKisaki") ? nbt.getUuid("OwnerKisaki") : null;
-        targetUuid = nbt.containsUuid("Target") ? nbt.getUuid("Target") : null;
-        if (nbt.contains("State")) this.dataTracker.set(STATE, nbt.getInt("State"));
-        coilTicks = nbt.getInt("CoilTicks");
-        coilAngle = nbt.getDouble("CoilAngle");
-    }
-
-    @Override
-    protected void writeCustomDataToNbt(NbtCompound nbt) {
-        if (ownerKisakiUuid != null) nbt.putUuid("OwnerKisaki", ownerKisakiUuid);
-        if (targetUuid != null) nbt.putUuid("Target", targetUuid);
-        nbt.putInt("State", this.dataTracker.get(STATE));
-        nbt.putInt("CoilTicks", coilTicks);
-        nbt.putDouble("CoilAngle", coilAngle);
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        builder.define(STATE, STATE_FLY);
     }
 
     @Override
     public void tick() {
         super.tick();
 
-        // クライアントは描画だけでOK（位置はサーバー同期）
-        if (this.getWorld().isClient) return;
+        if (this.level().isClientSide()) {
+            return;
+        }
 
-        if (!(this.getWorld() instanceof ServerWorld sw)) return;
+        if (!(this.level() instanceof ServerLevel serverLevel)) {
+            return;
+        }
 
-        // ターゲット取得
-        Entity target = (targetUuid != null) ? sw.getEntity(targetUuid) : null;
+        Entity target = (targetUuid != null) ? serverLevel.getEntity(targetUuid) : null;
         if (target == null || !target.isAlive()) {
             this.discard();
             return;
         }
 
-        int st = this.dataTracker.get(STATE);
-
-        // target基準位置（巻きつき中心）
-        Vec3d center = target.getPos().add(0, target.getHeight() * 0.6, 0);
+        int st = this.entityData.get(STATE);
+        Vec3 center = target.position().add(0, target.getBbHeight() * 0.6, 0);
 
         if (st == STATE_FLY) {
-            // キサキから target へ “飛ぶ”
-            Vec3d to = center.subtract(this.getPos());
+            Vec3 to = center.subtract(this.position());
             double d = to.length();
+
             lookAt(target);
 
-
-            // 到達したら巻きつきへ
             if (d < 1.2) {
-                this.dataTracker.set(STATE, STATE_COIL);
-                coilTicks = 40;         // buff演出時間（2秒）
+                this.entityData.set(STATE, STATE_COIL);
+                coilTicks = 40;
                 coilAngle = 0.0;
                 return;
             }
 
-            // 速度（適当に調整）
-            Vec3d step = to.normalize().multiply(0.65);
-            Vec3d next = this.getPos().add(step);
+            Vec3 step = to.normalize().scale(0.65);
+            Vec3 next = this.position().add(step);
 
-            // 物理衝突させたくないので setPosition 系でOK
-            this.setPosition(next.x, next.y, next.z);
-            this.setVelocity(Vec3d.ZERO);
+            this.setPos(next.x, next.y, next.z);
+            this.setDeltaMovement(Vec3.ZERO);
+
 
         } else {
-            // 巻きつき：target の周囲を円運動
             coilTicks--;
-            // ★位置固定（ターゲット横にピタ止め）
-            Vec3d p = center.add(0.8, 0.0, 0.0); // 横に少しずらすだけ
 
-            this.setPosition(p.x, p.y, p.z);
+            Vec3 p = center.add(0.8, 0.0, 0.0);
+
+            this.setPos(p.x, p.y, p.z);
             lookAt(target);
 
-            this.setVelocity(Vec3d.ZERO);
+            this.setDeltaMovement(Vec3.ZERO);
 
-            // 寿命
+
             if (coilTicks <= 0) {
                 this.discard();
             }
         }
     }
 
-    // 物理無効化（念のため）
     @Override
-    public void move(MovementType movementType, Vec3d movement) {
-        // 何もしない（位置は tick で setPosition）
+    public void move(MoverType moverType, Vec3 movement) {
+        // 位置は tick 内で setPos しているため無効化
     }
 
-    // ===== GeckoLib =====
+    @Override
+    public boolean hurtServer(ServerLevel level, DamageSource source, float damage) {
+        return false;
+    }
+
+    @Override
+    protected void readAdditionalSaveData(ValueInput input) {
+
+    }
+
+    @Override
+    protected void addAdditionalSaveData(ValueOutput output) {
+
+    }
+
     @Override
     public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
-        controllers.add(new AnimationController<>(this, "main", 0, this::predicate));
-    }
-
-    private PlayState predicate(AnimationState<KisakiDragonEntity> state) {
-        int st = this.dataTracker.get(STATE);
-        state.getController().setAnimation(st == STATE_COIL ? BUFF : RUN);
-        return PlayState.CONTINUE;
+        controllers.add(new AnimationController<>(
+                "main",
+                0,
+                state -> {
+                    int st = this.entityData.get(STATE);
+                    state.setAnimation(st == STATE_COIL ? BUFF : RUN);
+                    return PlayState.CONTINUE;
+                }
+        ));
     }
 
     @Override
@@ -166,14 +160,16 @@ public class KisakiDragonEntity extends Entity implements GeoEntity {
     }
 
     private void lookAt(Entity target) {
-        Vec3d to = target.getPos().add(0, target.getHeight() * 0.6, 0)
-                .subtract(this.getPos());
+        Vec3 to = target.position()
+                .add(0, target.getBbHeight() * 0.6, 0)
+                .subtract(this.position());
 
-        double yaw = Math.toDegrees(Math.atan2(-to.x, to.z));
+        float yaw = (float) Math.toDegrees(Math.atan2(-to.x, to.z));
 
-        this.setYaw((float) yaw);
-        this.setBodyYaw((float) yaw);
-        this.setHeadYaw((float) yaw);
+        this.setYRot(yaw);
+
+        this.setYRot(yaw);
+        this.setYBodyRot(yaw);
+        this.setYHeadRot(yaw);
     }
-
 }

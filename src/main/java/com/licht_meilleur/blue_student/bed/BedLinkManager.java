@@ -2,17 +2,18 @@ package com.licht_meilleur.blue_student.bed;
 
 import com.licht_meilleur.blue_student.state.StudentWorldState;
 import com.licht_meilleur.blue_student.student.StudentId;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
 
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class BedLinkManager {
+
     private static final Map<UUID, StudentId> LINKING = new ConcurrentHashMap<>();
 
-    // ★ owner -> (student -> footPos)
+    // owner -> (student -> footPos)
     private static final Map<UUID, Map<StudentId, BlockPos>> BEDS = new ConcurrentHashMap<>();
 
     public static void setLinking(UUID playerUuid, StudentId id) {
@@ -28,25 +29,26 @@ public class BedLinkManager {
     }
 
     public static BlockPos getBedPos(UUID playerUuid, StudentId id) {
-        var m = BEDS.get(playerUuid);
-        return (m == null) ? null : m.get(id);
+        Map<StudentId, BlockPos> map = BEDS.get(playerUuid);
+        return map == null ? null : map.get(id);
     }
 
     public static void setBedPos(UUID playerUuid, StudentId id, BlockPos footPos) {
         BEDS.computeIfAbsent(playerUuid, k -> new ConcurrentHashMap<>()).put(id, footPos);
-
     }
 
     public static void clearBedPos(UUID playerUuid, StudentId id) {
-        var m = BEDS.get(playerUuid);
-        if (m != null) m.remove(id);
+        Map<StudentId, BlockPos> map = BEDS.get(playerUuid);
+        if (map != null) {
+            map.remove(id);
+        }
     }
 
-    public static void setBedPosAndPersist(ServerWorld sw, UUID playerUuid, StudentId id, BlockPos footPos) {
-        // まずメモリにも入れる（今までの挙動維持）
+    public static void setBedPosAndPersist(ServerLevel serverLevel, UUID playerUuid, StudentId id, BlockPos footPos) {
+        // メモリにも入れる
         setBedPos(playerUuid, id, footPos);
 
-        // ★Overworld固定DBに永続保存（これが本命）
-        StudentWorldState.get(sw.getServer()).setBed(id, footPos);
+        // Overworld 固定DBに永続保存
+        StudentWorldState.get(serverLevel.getServer()).setBed(id, footPos);
     }
 }

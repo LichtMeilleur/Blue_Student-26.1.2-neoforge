@@ -1,7 +1,7 @@
 package com.licht_meilleur.blue_student.craft_chamber;
 
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.Identifier;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.List;
 
@@ -13,4 +13,5 @@ public record CraftChamberRecipe(
         ItemStack slot3,
         ItemStack slot6,
         ItemStack slot9
-) {}
+) {
+}

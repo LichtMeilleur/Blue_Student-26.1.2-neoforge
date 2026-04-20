@@ -1,256 +1,242 @@
 package com.licht_meilleur.blue_student.entity.projectile;
 
 import com.licht_meilleur.blue_student.registry.ModEntities;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.damage.DamageSource;
-import net.minecraft.entity.data.DataTracker;
-import net.minecraft.entity.data.TrackedData;
-import net.minecraft.entity.data.TrackedDataHandlerRegistry;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.particle.ParticleTypes;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.*;
-import net.minecraft.world.RaycastContext;
-import net.minecraft.world.World;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.Mth;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
 import java.util.UUID;
 
 public class HyperCannonEntity extends Entity {
 
-    public enum Side { LEFT, RIGHT }
+    public enum Side {
+        LEFT, RIGHT
+    }
 
-    // ===== tuning =====
-    public static final int LIFE_TICKS = 20;          // 照射時間
-    public static final int HIT_INTERVAL = 2;         // 2tickごと
-    public static final float DAMAGE_PER_HIT = 4.0f;  // 3〜5の中間（好みでrandにしてもOK）
+    public static final int LIFE_TICKS = 20;
+    public static final int HIT_INTERVAL = 2;
+    public static final float DAMAGE_PER_HIT = 4.0f;
     public static final double MAX_RANGE = 24.0;
-    public static final double RADIUS = 0.7;          // 太さ（当たり判定）
+    public static final double RADIUS = 0.7;
 
-    // 粒子密度（重ければ 0.8〜1.2 に上げる）
     private static final double PARTICLE_STEP = 0.6;
     private static final int PARTICLE_EVERY_TICKS = 2;
 
-    // ===== DataTracker（寿命だけ同期しておけばOK）=====
-    private static final TrackedData<Integer> LIFE =
-            DataTracker.registerData(HyperCannonEntity.class, TrackedDataHandlerRegistry.INTEGER);
-
-    // ===== server state =====
     private UUID ownerUuid;
     private UUID targetUuid;
     private Side side = Side.LEFT;
     private int ageTicks = 0;
+    private int life = LIFE_TICKS;
 
-    public HyperCannonEntity(EntityType<? extends HyperCannonEntity> type, World world) {
-        super(type, world);
-        this.noClip = true;
+    public HyperCannonEntity(EntityType<? extends HyperCannonEntity> type, Level level) {
+        super(type, level);
+        this.noPhysics = true;
     }
 
-    public HyperCannonEntity(World world) {
-        this(ModEntities.HYPER_CANNON, world);
+    public HyperCannonEntity(Level level) {
+        this(ModEntities.HYPER_CANNON, level);
+    }
+
+    public void init(LivingEntity owner, LivingEntity target, Side side) {
+        this.ownerUuid = owner.getUUID();
+        this.targetUuid = target.getUUID();
+        this.side = side;
+        this.ageTicks = 0;
+        this.life = LIFE_TICKS;
+
+        this.setPos(owner.getX(), owner.getEyeY(), owner.getZ());
     }
 
     @Override
-    protected void initDataTracker() {
-        this.dataTracker.startTracking(LIFE, LIFE_TICKS);
-    }
+    protected void defineSynchedData(SynchedEntityData.Builder entityData) {
 
-    /** Goalから呼ぶ初期化 */
-    public void init(LivingEntity owner, LivingEntity target, Side side) {
-        this.ownerUuid = owner.getUuid();
-        this.targetUuid = target.getUuid();
-        this.side = side;
-        this.ageTicks = 0;
-        this.dataTracker.set(LIFE, LIFE_TICKS);
-
-        // 位置はtickで更新。とりあえずownerの目あたり
-        this.setPos(owner.getX(), owner.getEyeY(), owner.getZ());
     }
 
     @Override
     public void tick() {
         super.tick();
 
-        if (!(this.getWorld() instanceof ServerWorld sw)) return;
+        if (!(this.level() instanceof ServerLevel serverLevel)) return;
 
         ageTicks++;
+        life--;
 
-        int lifeLeft = this.dataTracker.get(LIFE) - 1;
-        this.dataTracker.set(LIFE, lifeLeft);
-        if (lifeLeft <= 0) {
+        if (life <= 0) {
             this.discard();
             return;
         }
 
-        LivingEntity owner = getLiving(sw, ownerUuid);
-        LivingEntity target = getLiving(sw, targetUuid);
+        LivingEntity owner = getLiving(serverLevel, ownerUuid);
+        LivingEntity target = getLiving(serverLevel, targetUuid);
 
         if (owner == null || !owner.isAlive() || target == null || !target.isAlive()) {
             this.discard();
             return;
         }
 
-        // ===== 始点：SUB_L / SUB_R “近似” =====
-        Vec3d start = startFrom(owner, target, side);
+        Vec3 start = startFrom(owner, target, side);
+        Vec3 wantedEnd = target.getEyePosition();
+        Vec3 end = clipByBlocks(serverLevel, owner, start, wantedEnd);
 
-        // ===== 終点：target目線（壁で止める）=====
-        Vec3d wantedEnd = target.getEyePos();
-        Vec3d end = clipByBlocks(sw, owner, start, wantedEnd);
-
-        // 自分の座標は始点に置く（描画しないので意味は薄いが、デバッグに便利）
         this.setPos(start.x, start.y, start.z);
 
-        // ===== 2tickごとに当たり判定 =====
         if ((ageTicks % HIT_INTERVAL) == 0) {
-            damageAlongSegment(sw, owner, start, end);
+            damageAlongSegment(serverLevel, owner, start, end);
         }
 
-        // ===== 粒子（線上にSonicBoomを敷く）=====
         if ((ageTicks % PARTICLE_EVERY_TICKS) == 0) {
-            spawnSonicBeam(sw, start, end);
+            spawnSonicBeam(serverLevel, start, end);
         }
     }
 
-    // ------------------------
-    // geometry helpers
-    // ------------------------
+    private static Vec3 startFrom(LivingEntity owner, LivingEntity target, Side side) {
+        Vec3 base = owner.getEyePosition().subtract(0, 0.10, 0);
 
-    private static Vec3d startFrom(LivingEntity owner, LivingEntity target, Side side) {
-        // base：目線ちょい下（銃口っぽく）
-        Vec3d base = owner.getEyePos().subtract(0, 0.10, 0);
-
-        // forward：敵方向を優先（LookAtに依存しない）
-        Vec3d toT = target.getEyePos().subtract(base);
-        Vec3d forward = (toT.lengthSquared() < 1e-6)
-                ? owner.getRotationVec(1.0f)
+        Vec3 toT = target.getEyePosition().subtract(base);
+        Vec3 forward = (toT.lengthSqr() < 1.0e-6)
+                ? owner.getViewVector(1.0f)
                 : toT.normalize();
 
-        // right = up x forward
-        Vec3d right = new Vec3d(0, 1, 0).crossProduct(forward);
-        if (right.lengthSquared() < 1e-6) right = new Vec3d(1, 0, 0);
+        Vec3 right = new Vec3(0, 1, 0).cross(forward);
+        if (right.lengthSqr() < 1.0e-6) right = new Vec3(1, 0, 0);
         right = right.normalize();
 
         double sign = (side == Side.LEFT) ? -1.0 : 1.0;
 
-        double sideOff = 0.22 * sign; // 左右幅
-        double fwdOff  = 0.12;        // 少し前へ
+        double sideOff = 0.22 * sign;
+        double fwdOff = 0.12;
 
-        return base.add(right.multiply(sideOff)).add(forward.multiply(fwdOff));
+        return base.add(right.scale(sideOff)).add(forward.scale(fwdOff));
     }
 
-    private static Vec3d clipByBlocks(ServerWorld sw, LivingEntity owner, Vec3d start, Vec3d wantedEnd) {
-        BlockHitResult hit = sw.raycast(new RaycastContext(
-                start, wantedEnd,
-                RaycastContext.ShapeType.COLLIDER,
-                RaycastContext.FluidHandling.NONE,
+    private static Vec3 clipByBlocks(ServerLevel serverLevel, LivingEntity owner, Vec3 start, Vec3 wantedEnd) {
+        HitResult hit = serverLevel.clip(new ClipContext(
+                start,
+                wantedEnd,
+                ClipContext.Block.COLLIDER,
+                ClipContext.Fluid.NONE,
                 owner
         ));
-        if (hit.getType() != HitResult.Type.MISS) return hit.getPos();
+        if (hit.getType() != HitResult.Type.MISS) return hit.getLocation();
         return wantedEnd;
     }
 
-    private static void spawnSonicBeam(ServerWorld sw, Vec3d start, Vec3d end) {
-        Vec3d dir = end.subtract(start);
+    private static void spawnSonicBeam(ServerLevel serverLevel, Vec3 start, Vec3 end) {
+        Vec3 dir = end.subtract(start);
         double len = dir.length();
         if (len < 0.01) return;
 
-        Vec3d step = dir.normalize().multiply(PARTICLE_STEP);
-        int steps = (int)Math.ceil(len / PARTICLE_STEP);
+        Vec3 step = dir.normalize().scale(PARTICLE_STEP);
+        int steps = (int) Math.ceil(len / PARTICLE_STEP);
 
-        Vec3d p = start;
+        Vec3 p = start;
         for (int i = 0; i <= steps; i++) {
-            sw.spawnParticles(ParticleTypes.SONIC_BOOM,
-                    p.x, p.y, p.z,
-                    1, 0, 0, 0, 0.0);
+            serverLevel.sendParticles(ParticleTypes.SONIC_BOOM, p.x, p.y, p.z, 1, 0, 0, 0, 0.0);
             p = p.add(step);
         }
     }
 
-    private static void damageAlongSegment(ServerWorld sw, LivingEntity owner, Vec3d start, Vec3d end) {
-        // セグメントを覆うAABB
-        Box box = new Box(start, end).expand(RADIUS);
+    private static void damageAlongSegment(ServerLevel serverLevel, LivingEntity owner, Vec3 start, Vec3 end) {
+        AABB box = new AABB(start, end).inflate(RADIUS);
 
-        List<LivingEntity> candidates = sw.getEntitiesByClass(
-                LivingEntity.class, box,
+        List<LivingEntity> candidates = serverLevel.getEntitiesOfClass(
+                LivingEntity.class,
+                box,
                 e -> e.isAlive() && e != owner
         );
 
-        DamageSource src = sw.getDamageSources().magic();
+        DamageSource src = serverLevel.damageSources().magic();
 
         for (LivingEntity t : candidates) {
-            // 太ビーム判定：点と線分の距離
-            Vec3d center = t.getPos().add(0, t.getHeight() * 0.5, 0);
+            Vec3 center = t.position().add(0, t.getBbHeight() * 0.5, 0);
             double distSq = distanceSqPointToSegment(center, start, end);
             if (distSq > RADIUS * RADIUS) continue;
 
-            // 遮蔽（ざっくり）
-            if (!hasLine(sw, owner, start, center)) continue;
+            if (!hasLine(serverLevel, owner, start, center)) continue;
 
-            // 多段が通るよう regen を潰す（必要なら）
-            t.timeUntilRegen = 0;
-
-            Vec3d beforeVel = t.getVelocity();
-            boolean ok = t.damage(src, DAMAGE_PER_HIT);
+            boolean ok = t.hurtServer(serverLevel, src, DAMAGE_PER_HIT);
             if (ok) {
-                // ノックバック抑制
-                t.setVelocity(beforeVel);
-                t.velocityDirty = true;
+                t.setDeltaMovement(t.getDeltaMovement());
             }
         }
     }
 
-    private static boolean hasLine(ServerWorld sw, LivingEntity owner, Vec3d from, Vec3d to) {
-        HitResult hr = sw.raycast(new RaycastContext(
-                from, to,
-                RaycastContext.ShapeType.COLLIDER,
-                RaycastContext.FluidHandling.NONE,
+    private static boolean hasLine(ServerLevel serverLevel, LivingEntity owner, Vec3 from, Vec3 to) {
+        HitResult hr = serverLevel.clip(new ClipContext(
+                from,
+                to,
+                ClipContext.Block.COLLIDER,
+                ClipContext.Fluid.NONE,
                 owner
         ));
         return hr.getType() == HitResult.Type.MISS;
     }
 
-    private static double distanceSqPointToSegment(Vec3d p, Vec3d a, Vec3d b) {
-        Vec3d ab = b.subtract(a);
-        double abLenSq = ab.lengthSquared();
-        if (abLenSq < 1e-9) return p.squaredDistanceTo(a);
+    private static double distanceSqPointToSegment(Vec3 p, Vec3 a, Vec3 b) {
+        Vec3 ab = b.subtract(a);
+        double abLenSq = ab.lengthSqr();
+        if (abLenSq < 1.0e-9) return p.distanceToSqr(a);
 
-        double t = p.subtract(a).dotProduct(ab) / abLenSq;
-        t = MathHelper.clamp(t, 0.0, 1.0);
-        Vec3d proj = a.add(ab.multiply(t));
-        return p.squaredDistanceTo(proj);
+        double t = p.subtract(a).dot(ab) / abLenSq;
+        t = Mth.clamp(t, 0.0, 1.0);
+        Vec3 proj = a.add(ab.scale(t));
+        return p.distanceToSqr(proj);
     }
 
-    private static LivingEntity getLiving(ServerWorld sw, UUID id) {
+    private static LivingEntity getLiving(ServerLevel serverLevel, UUID id) {
         if (id == null) return null;
-        Entity e = sw.getEntity(id);
+        Entity e = serverLevel.getEntity(id);
         return (e instanceof LivingEntity le) ? le : null;
     }
 
-    // ------------------------
-    // NBT
-    // ------------------------
-
     @Override
-    protected void readCustomDataFromNbt(NbtCompound nbt) {
-        if (nbt.containsUuid("Owner")) ownerUuid = nbt.getUuid("Owner");
-        if (nbt.containsUuid("Target")) targetUuid = nbt.getUuid("Target");
-        if (nbt.contains("Side")) {
-            try { side = Side.valueOf(nbt.getString("Side")); } catch (Exception ignored) {}
-        }
-        ageTicks = nbt.getInt("AgeTicks");
-        dataTracker.set(LIFE, nbt.getInt("Life"));
+    public boolean hurtServer(ServerLevel level, DamageSource source, float damage) {
+        return false;
     }
 
     @Override
-    protected void writeCustomDataToNbt(NbtCompound nbt) {
-        if (ownerUuid != null) nbt.putUuid("Owner", ownerUuid);
-        if (targetUuid != null) nbt.putUuid("Target", targetUuid);
-        nbt.putString("Side", side.name());
-        nbt.putInt("AgeTicks", ageTicks);
-        nbt.putInt("Life", dataTracker.get(LIFE));
+    protected void readAdditionalSaveData(ValueInput input) {
+        String owner = input.getString("Owner").orElse("");
+        ownerUuid = owner.isEmpty() ? null : UUID.fromString(owner);
+
+        String target = input.getString("Target").orElse("");
+        targetUuid = target.isEmpty() ? null : UUID.fromString(target);
+
+        String sideName = input.getString("Side").orElse(Side.LEFT.name());
+        try {
+            side = Side.valueOf(sideName);
+        } catch (Exception ignored) {
+            side = Side.LEFT;
+        }
+
+        ageTicks = input.getInt("AgeTicks").orElse(0);
+        life = input.getInt("Life").orElse(LIFE_TICKS);
+    }
+
+    @Override
+    protected void addAdditionalSaveData(ValueOutput output) {
+        if (ownerUuid != null) {
+            output.putString("Owner", ownerUuid.toString());
+        }
+        if (targetUuid != null) {
+            output.putString("Target", targetUuid.toString());
+        }
+
+        output.putString("Side", side.name());
+        output.putInt("AgeTicks", ageTicks);
+        output.putInt("Life", life);
     }
 }

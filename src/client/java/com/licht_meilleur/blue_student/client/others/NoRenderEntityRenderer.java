@@ -1,29 +1,37 @@
 package com.licht_meilleur.blue_student.client.others;
 
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.entity.EntityRenderer;
-import net.minecraft.client.render.entity.EntityRendererFactory;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.entity.Entity;
-import net.minecraft.util.Identifier;
+import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.entity.EntityRenderer;
+import net.minecraft.client.renderer.entity.EntityRendererProvider;
+import net.minecraft.client.renderer.entity.state.EntityRenderState;
+import net.minecraft.client.renderer.state.level.CameraRenderState;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.entity.Entity;
 
-public class NoRenderEntityRenderer<T extends Entity> extends EntityRenderer<T> {
+public class NoRenderEntityRenderer<T extends Entity> extends EntityRenderer<T, EntityRenderState> {
 
-    // 使われないけど null だと怖いので適当なテクスチャを返す
-    private static final Identifier DUMMY = new Identifier("minecraft", "textures/misc/white.png");
+    private static final Identifier DUMMY = Identifier.withDefaultNamespace("textures/misc/white.png");
 
-    public NoRenderEntityRenderer(EntityRendererFactory.Context ctx) {
+    public NoRenderEntityRenderer(EntityRendererProvider.Context ctx) {
         super(ctx);
     }
 
     @Override
-    public void render(T entity, float yaw, float tickDelta, MatrixStack matrices,
-                       VertexConsumerProvider vertexConsumers, int light) {
-        // 何も描画しない（クラッシュ回避用）
+    public EntityRenderState createRenderState() {
+        return new EntityRenderState();
     }
 
     @Override
-    public Identifier getTexture(T entity) {
-        return DUMMY;
+    public void extractRenderState(T entity, EntityRenderState state, float partialTick) {
+        super.extractRenderState(entity, state, partialTick);
+    }
+
+    @Override
+    public void submit(EntityRenderState state,
+                       PoseStack poseStack,
+                       SubmitNodeCollector submitNodeCollector,
+                       CameraRenderState camera) {
+        // 何も描画しない
     }
 }

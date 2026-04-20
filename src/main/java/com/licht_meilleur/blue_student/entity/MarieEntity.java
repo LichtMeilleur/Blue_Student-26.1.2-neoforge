@@ -1,52 +1,64 @@
 package com.licht_meilleur.blue_student.entity;
 
-import com.licht_meilleur.blue_student.ai.*;
+import com.geckolib.animation.RawAnimation;
+import com.licht_meilleur.blue_student.ai.StudentAimGoal;
+import com.licht_meilleur.blue_student.ai.StudentCombatGoal;
+import com.licht_meilleur.blue_student.ai.StudentEatGoal;
+import com.licht_meilleur.blue_student.ai.StudentEvadeGoal;
+import com.licht_meilleur.blue_student.ai.StudentFollowGoal;
+import com.licht_meilleur.blue_student.ai.StudentReturnToOwnerGoal;
+import com.licht_meilleur.blue_student.ai.StudentRideWithOwnerGoal;
+import com.licht_meilleur.blue_student.ai.StudentSecurityGoal;
+import com.licht_meilleur.blue_student.ai.StudentStuckEscapeGoal;
 import com.licht_meilleur.blue_student.ai.only.MarieBuffGoal;
 import com.licht_meilleur.blue_student.bed.BedLinkManager;
-import com.licht_meilleur.blue_student.student.StudentAiMode;
 import com.licht_meilleur.blue_student.student.StudentId;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.ai.goal.EscapeDangerGoal;
-import net.minecraft.entity.ai.goal.SwimGoal;
-import net.minecraft.entity.data.DataTracker;
-import net.minecraft.entity.data.TrackedData;
-import net.minecraft.entity.data.TrackedDataHandlerRegistry;
-import net.minecraft.entity.mob.HostileEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
-import software.bernie.geckolib.core.animation.RawAnimation;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.ai.goal.AvoidEntityGoal;
+import net.minecraft.world.entity.ai.goal.FloatGoal;
+import net.minecraft.world.entity.ai.goal.PanicGoal;
+import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+
+import java.util.UUID;
 
 public class MarieEntity extends AbstractStudentEntity {
 
-    private static final TrackedData<StudentAiMode> AI_MODE =
-            DataTracker.registerData(MarieEntity.class, StudentAiMode.TRACKED);
+    private static final EntityDataAccessor<Integer> AI_MODE =
+            SynchedEntityData.defineId(MarieEntity.class, EntityDataSerializers.INT);
 
     public static final String ANIM_PRAY = "animation.model.pray";
+    private static final RawAnimation PRAY = RawAnimation.begin().thenLoop(ANIM_PRAY);
 
-    private static final RawAnimation PRAY   = RawAnimation.begin().thenLoop(ANIM_PRAY);
-
-
-    private static final TrackedData<Integer> PRAY_TRIGGER =
-            DataTracker.registerData(MarieEntity.class, TrackedDataHandlerRegistry.INTEGER);
+    private static final EntityDataAccessor<Integer> PRAY_TRIGGER =
+            SynchedEntityData.defineId(MarieEntity.class, EntityDataSerializers.INT);
 
     private int clientBuffTicks = 0;
     private int lastBuffTrigger = 0;
     private static final int BUFF_ANIM_TICKS = 20;
 
-    //クールタイム//
     private int cooldownTicks = 0;
-    private static final int COOLDOWN = 200; // 10秒
-
-
+    private static final int COOLDOWN = 200;
 
     private int buffCastingTicks = 0;
 
-    public MarieEntity(EntityType<? extends AbstractStudentEntity> type, World world) {
-        super(type, world);
+    public MarieEntity(EntityType<? extends AbstractStudentEntity> type, Level level) {
+        super(type, level);
+    }
+
+    @Override
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        super.defineSynchedData(builder);
+        builder.define(PRAY_TRIGGER, 0);
     }
 
     @Override
@@ -55,108 +67,97 @@ public class MarieEntity extends AbstractStudentEntity {
     }
 
     @Override
-    protected TrackedData<StudentAiMode> getAiModeTrackedData() {
+    protected EntityDataAccessor<Integer> getAiModeTrackedData() {
         return AI_MODE;
     }
 
-    // 固有：スニーク素手でベッドリンク、他は共通カードUI
     @Override
-    public ActionResult interactMob(PlayerEntity player, Hand hand) {
-        if (this.getWorld().isClient) return ActionResult.SUCCESS;
-
-        if (ownerUuid == null) setOwnerUuid(player.getUuid());
-        if (!player.getUuid().equals(ownerUuid)) return ActionResult.PASS;
-
-        ItemStack inHand = player.getStackInHand(hand);
-
-        if (player.isSneaking() && inHand.isEmpty()) {
-            BedLinkManager.setLinking(player.getUuid(), StudentId.MARIE);
-            player.sendMessage(net.minecraft.text.Text.translatable("msg.blue_student.link_mode", "kisaki"), false);
-            return ActionResult.CONSUME;
+    protected InteractionResult mobInteract(Player player, InteractionHand hand) {
+        if (this.level().isClientSide()) {
+            return InteractionResult.SUCCESS;
         }
 
-        return super.interactMob(player, hand);
+        UUID owner = getOwnerUuid();
+        if (owner == null) {
+            setOwnerUuid(player.getUUID());
+            owner = player.getUUID();
+        }
+
+        if (!player.getUUID().equals(owner)) {
+            return InteractionResult.CONSUME;
+        }
+
+        ItemStack inHand = player.getItemInHand(hand);
+
+        if (player.isShiftKeyDown() && inHand.isEmpty()) {
+            BedLinkManager.setLinking(player.getUUID(), StudentId.MARIE);
+            player.sendSystemMessage(Component.translatable("msg.blue_student.link_mode", "marie"));
+            return InteractionResult.CONSUME;
+        }
+
+        return super.mobInteract(player, hand);
     }
 
-    protected void initGoals() {
-        this.goalSelector.add(0, new StudentRideWithOwnerGoal(this, this));
-        this.goalSelector.add(1, new SwimGoal(this));
+    @Override
+    protected void registerGoals() {
+        this.goalSelector.addGoal(0, new StudentRideWithOwnerGoal(this, this));
+        this.goalSelector.addGoal(1, new FloatGoal(this));
 
-
-        // ★バフ（MOVE/LOOK非競合なので安全）
-        this.goalSelector.add(2, new MarieBuffGoal(this, this));
-        // ★Aim（向き＋射撃）: LOOK担当
-        this.goalSelector.add(3, new StudentAimGoal(this, this));
-
-        // 詰まり脱出（MOVE）
-        this.goalSelector.add(4, new StudentStuckEscapeGoal(this, this));
-
-        // 回避（MOVE） ※Combatより上
-        this.goalSelector.add(5, new StudentEvadeGoal(this, this));
-
-        // 危険回避（バニラ） ※必要ならここ（ただし強すぎるなら外す）
-        this.goalSelector.add(6, new EscapeDangerGoal(this, 1.25));
-
-        this.goalSelector.add(7, new StudentReturnToOwnerGoal(this, this, 1.35, 28.0, 2.5, 48.0, 20));
-
-        // 角詰まり用（強いので優先度低め推奨）
-        this.goalSelector.add(8, new net.minecraft.entity.ai.goal.FleeEntityGoal<>(this, HostileEntity.class, 8.0f, 1.0, 1.35));
-
-        // 戦闘（MOVE + 射撃キュー）
-        this.goalSelector.add(9, new StudentCombatGoal(this, this));
-
-        this.goalSelector.add(10, new StudentFollowGoal(this, this, 1.1));
-        this.goalSelector.add(11, new StudentSecurityGoal(this, this,
+        this.goalSelector.addGoal(2, new MarieBuffGoal(this, this));
+        this.goalSelector.addGoal(3, new StudentAimGoal(this, this));
+        this.goalSelector.addGoal(4, new StudentStuckEscapeGoal(this, this));
+        this.goalSelector.addGoal(5, new StudentEvadeGoal(this, this));
+        this.goalSelector.addGoal(6, new PanicGoal(this, 1.25));
+        this.goalSelector.addGoal(7, new StudentReturnToOwnerGoal(this, this, 1.35, 28.0, 2.5, 48.0, 20));
+        this.goalSelector.addGoal(8, new AvoidEntityGoal<>(this, Monster.class, 8.0f, 1.0, 1.35));
+        this.goalSelector.addGoal(9, new StudentCombatGoal(this, this));
+        this.goalSelector.addGoal(10, new StudentFollowGoal(this, this, 1.1));
+        this.goalSelector.addGoal(11, new StudentSecurityGoal(this, this,
                 new StudentSecurityGoal.ISecurityPosProvider() {
-                    @Override public BlockPos getSecurityPos() { return MarieEntity.this.getSecurityPos(); }
-                    @Override public void setSecurityPos(BlockPos pos) { MarieEntity.this.setSecurityPos(pos); }
+                    @Override
+                    public BlockPos getSecurityPos() {
+                        return MarieEntity.this.getSecurityPos();
+                    }
+
+                    @Override
+                    public void setSecurityPos(BlockPos pos) {
+                        MarieEntity.this.setSecurityPos(pos);
+                    }
                 },
                 1.0));
-        this.goalSelector.add(12, new StudentEatGoal(this, this));
+        this.goalSelector.addGoal(12, new StudentEatGoal(this, this));
     }
 
-    // ★注意：initDataTracker() は override しない（Duplicate防止）
-    @Override
-    protected void initDataTracker() {
-        super.initDataTracker();
-        this.dataTracker.startTracking(PRAY_TRIGGER, 0);
-    }
     public void requestBuff() {
-        if (this.getWorld().isClient) return;
+        if (this.level().isClientSide()) return;
 
-        this.dataTracker.set(PRAY_TRIGGER, this.dataTracker.get(PRAY_TRIGGER) + 1);
+        this.entityData.set(PRAY_TRIGGER, this.entityData.get(PRAY_TRIGGER) + 1);
 
-        startBuffCasting(20); // 詠唱停止
-        cooldownTicks = COOLDOWN; // ← ★ここに移動（サーバー側で管理）
+        startBuffCasting(20);
+        cooldownTicks = COOLDOWN;
     }
-
 
     @Override
     public void tick() {
         super.tick();
 
-        // ===== サーバー側 =====
-        if (!this.getWorld().isClient) {
-
+        if (!this.level().isClientSide()) {
             if (cooldownTicks > 0) cooldownTicks--;
 
             if (buffCastingTicks > 0) {
                 buffCastingTicks--;
-
                 this.getNavigation().stop();
-                this.setVelocity(0, 0, 0);
+                this.setDeltaMovement(0, 0, 0);
             }
         }
 
-        // ===== クライアント側（アニメのみ） =====
-        if (this.getWorld().isClient) {
-            int trig = this.dataTracker.get(PRAY_TRIGGER);
+        if (this.level().isClientSide()) {
+            int trig = this.entityData.get(PRAY_TRIGGER);
 
             if (trig != lastBuffTrigger) {
                 lastBuffTrigger = trig;
                 clientBuffTicks = BUFF_ANIM_TICKS;
-            }
-            else if (clientBuffTicks > 0) {
+            } else if (clientBuffTicks > 0) {
                 clientBuffTicks--;
             }
         }
@@ -164,7 +165,7 @@ public class MarieEntity extends AbstractStudentEntity {
 
     @Override
     protected RawAnimation getOverrideAnimationIfAny() {
-        if (this.getWorld().isClient && clientBuffTicks > 0) return PRAY;
+        if (this.level().isClientSide() && clientBuffTicks > 0) return PRAY;
         return null;
     }
 
@@ -175,8 +176,4 @@ public class MarieEntity extends AbstractStudentEntity {
     public void startBuffCasting(int ticks) {
         this.buffCastingTicks = ticks;
     }
-
-
-
-
 }

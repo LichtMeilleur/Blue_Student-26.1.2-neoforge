@@ -1,30 +1,34 @@
 package com.licht_meilleur.blue_student.entity.go_go_train;
 
+import com.geckolib.animatable.GeoEntity;
+import com.geckolib.animatable.instance.AnimatableInstanceCache;
+import com.geckolib.animatable.manager.AnimatableManager;
+import com.geckolib.animation.AnimationController;
+import com.geckolib.animation.RawAnimation;
+import com.geckolib.animation.object.PlayState;
+import com.geckolib.util.GeckoLibUtil;
 import com.licht_meilleur.blue_student.entity.AbstractStudentEntity;
 import com.licht_meilleur.blue_student.entity.HikariEntity;
 import com.licht_meilleur.blue_student.entity.TrainEntity;
 import com.licht_meilleur.blue_student.entity.projectile.GunTrainShellEntity;
 import com.licht_meilleur.blue_student.weapon.WeaponSpec;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.data.DataTracker;
-import net.minecraft.entity.data.TrackedData;
-import net.minecraft.entity.data.TrackedDataHandlerRegistry;
-import net.minecraft.entity.mob.HostileEntity;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
-import software.bernie.geckolib.animatable.GeoEntity;
-import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
-import software.bernie.geckolib.core.animation.AnimatableManager;
-import software.bernie.geckolib.core.animation.AnimationController;
-import software.bernie.geckolib.core.animation.RawAnimation;
-import software.bernie.geckolib.core.object.PlayState;
-import software.bernie.geckolib.util.GeckoLibUtil;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.Mth;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.MoverType;
+import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.UUID;
 
@@ -40,69 +44,100 @@ public class GoGoGunTrainEntity extends Entity implements GeoEntity {
     private int lifeTicks = 0;
     private static final int MAX_LIFE = 20 * 15;
 
-    private Vec3d anchorPos = null;
+    private Vec3 anchorPos = null;
 
     private boolean mergedMode = false;
-    public GoGoGunTrainEntity setMergedMode(boolean v){ this.mergedMode = v; return this; }
-    public boolean isMergedMode(){ return mergedMode; }
 
+    public GoGoGunTrainEntity setMergedMode(boolean v) {
+        this.mergedMode = v;
+        return this;
+    }
 
-    // ★追加：クライアントが砲塔回転用に参照できるターゲットEntityId
-    private static final TrackedData<Integer> SYNC_TARGET_EID =
-            DataTracker.registerData(GoGoGunTrainEntity.class, TrackedDataHandlerRegistry.INTEGER);
+    public boolean isMergedMode() {
+        return mergedMode;
+    }
 
-    private static final TrackedData<Float> SYNC_SHEET_YAW =
-            DataTracker.registerData(GoGoGunTrainEntity.class, TrackedDataHandlerRegistry.FLOAT);
-    private static final TrackedData<Float> SYNC_BODY_YAW =
-            DataTracker.registerData(GoGoGunTrainEntity.class, TrackedDataHandlerRegistry.FLOAT);
+    private static final EntityDataAccessor<Integer> SYNC_TARGET_EID =
+            SynchedEntityData.defineId(GoGoGunTrainEntity.class, EntityDataSerializers.INT);
 
+    private static final EntityDataAccessor<Float> SYNC_SHEET_YAW =
+            SynchedEntityData.defineId(GoGoGunTrainEntity.class, EntityDataSerializers.FLOAT);
 
+    private static final EntityDataAccessor<Float> SYNC_BODY_YAW =
+            SynchedEntityData.defineId(GoGoGunTrainEntity.class, EntityDataSerializers.FLOAT);
 
-
-    public GoGoGunTrainEntity(EntityType<?> type, World world) {
-        super(type, world);
-        this.noClip = true;
+    public GoGoGunTrainEntity(EntityType<?> type, Level level) {
+        super(type, level);
+        this.noPhysics = true;
         this.setNoGravity(true);
     }
 
     @Override
-    protected void initDataTracker() {
-        this.dataTracker.startTracking(SYNC_BODY_YAW, 0.0f);
-        this.dataTracker.startTracking(SYNC_SHEET_YAW, 0.0f);
-        this.dataTracker.startTracking(SYNC_TARGET_EID, -1); // ★追加（これが無いと set した瞬間クラッシュ）
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        builder.define(SYNC_BODY_YAW, 0.0f);
+        builder.define(SYNC_SHEET_YAW, 0.0f);
+        builder.define(SYNC_TARGET_EID, -1);
     }
-    public float getBodyYawDegSynced() { return this.dataTracker.get(SYNC_BODY_YAW); }
-    private void setBodyYawServer(float yaw) { this.dataTracker.set(SYNC_BODY_YAW, MathHelper.wrapDegrees(yaw)); }
 
-    public float getSheetYawDeg() { return this.dataTracker.get(SYNC_SHEET_YAW); }
-    private void setSheetYawServer(float yaw) { this.dataTracker.set(SYNC_SHEET_YAW, MathHelper.wrapDegrees(yaw)); }
+    public float getBodyYawDegSynced() {
+        return this.entityData.get(SYNC_BODY_YAW);
+    }
 
-    // ===== 外部セット =====
-    public GoGoGunTrainEntity setOwnerPlayerUuid(UUID ownerPlayerUuid) { this.ownerPlayerUuid = ownerPlayerUuid; return this; }
-    public GoGoGunTrainEntity setTrainUuid(UUID trainUuid) { this.trainUuid = trainUuid; return this; }
-    public GoGoGunTrainEntity setPassengerStudentUuid(UUID passengerStudentUuid) { this.passengerStudentUuid = passengerStudentUuid; return this; }
+    private void setBodyYawServer(float yaw) {
+        this.entityData.set(SYNC_BODY_YAW, Mth.wrapDegrees(yaw));
+    }
 
-    public UUID getOwnerPlayerUuid() { return ownerPlayerUuid; }
-    public UUID getTrainUuid() { return trainUuid; }
-    public UUID getPassengerStudentUuid() { return passengerStudentUuid; }
+    public float getSheetYawDeg() {
+        return this.entityData.get(SYNC_SHEET_YAW);
+    }
 
-    public void setAnchorPos(Vec3d p) { this.anchorPos = p; }
+    private void setSheetYawServer(float yaw) {
+        this.entityData.set(SYNC_SHEET_YAW, Mth.wrapDegrees(yaw));
+    }
 
-    // ★モデル側が見る（クライアントOK）
+    public GoGoGunTrainEntity setOwnerPlayerUuid(UUID ownerPlayerUuid) {
+        this.ownerPlayerUuid = ownerPlayerUuid;
+        return this;
+    }
+
+    public GoGoGunTrainEntity setTrainUuid(UUID trainUuid) {
+        this.trainUuid = trainUuid;
+        return this;
+    }
+
+    public GoGoGunTrainEntity setPassengerStudentUuid(UUID passengerStudentUuid) {
+        this.passengerStudentUuid = passengerStudentUuid;
+        return this;
+    }
+
+    public UUID getOwnerPlayerUuid() {
+        return ownerPlayerUuid;
+    }
+
+    public UUID getTrainUuid() {
+        return trainUuid;
+    }
+
+    public UUID getPassengerStudentUuid() {
+        return passengerStudentUuid;
+    }
+
+    public void setAnchorPos(Vec3 p) {
+        this.anchorPos = p;
+    }
+
     public int getSyncedTargetEntityId() {
-        return this.dataTracker.get(SYNC_TARGET_EID);
+        return this.entityData.get(SYNC_TARGET_EID);
     }
 
-    // サーバー側でyaw確定 & trackerへ
     private void setYawStableServer(float yaw) {
-        float y = MathHelper.wrapDegrees(yaw);
-        this.prevYaw = y;
-        this.setYaw(y);
-        this.refreshPositionAndAngles(this.getX(), this.getY(), this.getZ(), y, 0.0f);
+        float y = Mth.wrapDegrees(yaw);
+        this.setYRot(y);
+        this.setYBodyRot(y);
+        this.setYHeadRot(y);
 
-        // ★合体モードのbodyYawは tickFollowTrain が握る
         if (!mergedMode) {
-            this.dataTracker.set(SYNC_BODY_YAW, y);
+            this.entityData.set(SYNC_BODY_YAW, y);
         }
     }
 
@@ -110,225 +145,250 @@ public class GoGoGunTrainEntity extends Entity implements GeoEntity {
     public void tick() {
         super.tick();
 
+        if (this.level().isClientSide()) return;
+        if (!(this.level() instanceof ServerLevel serverLevel)) return;
 
-        if (this.getWorld().isClient) return;
+        tickFollowTrain(serverLevel);
 
-        if (!(this.getWorld() instanceof ServerWorld sw)) return;
-
-        tickFollowTrain(sw);
-
-        if (++lifeTicks > MAX_LIFE) { discardAndNotify(sw); return; }
-        if (!isOwnerAlive(sw))      { discardAndNotify(sw); return; }
-
-        // 孤児対策
-        if (trainUuid != null) {
-            Entity t = sw.getEntity(trainUuid);
-            if (t == null || !t.isAlive()) { discardAndNotify(sw); return; }
+        if (++lifeTicks > MAX_LIFE) {
+            discardAndNotify(serverLevel);
+            return;
+        }
+        if (!isOwnerAlive(serverLevel)) {
+            discardAndNotify(serverLevel);
+            return;
         }
 
-        // ===== 向き制御 =====
-        LivingEntity target = mergedMode ? findTrainTarget(sw) : findTarget(sw);
+        if (trainUuid != null) {
+            Entity t = serverLevel.getEntity(trainUuid);
+            if (t == null || !t.isAlive()) {
+                discardAndNotify(serverLevel);
+                return;
+            }
+        }
 
-// ★ターゲット同期（クライアントが参照）
-        this.dataTracker.set(SYNC_TARGET_EID, (target != null) ? target.getId() : -1);
+        LivingEntity target = mergedMode ? findTrainTarget(serverLevel) : findTarget(serverLevel);
+        this.entityData.set(SYNC_TARGET_EID, target != null ? target.getId() : -1);
 
-// 1) 車体Yaw（合体時は先頭列車yaw固定なので回さない）
         if (!mergedMode && target != null) {
-            Vec3d d = target.getEyePos().subtract(this.getPos());
-            if (d.horizontalLengthSquared() > 1.0e-6) {
-                float yaw = (float)(MathHelper.atan2(d.z, d.x) * (180.0 / Math.PI)) - 90.0f;
+            Vec3 d = target.getEyePosition().subtract(this.position());
+            if (d.horizontalDistanceSqr() > 1.0e-6) {
+                float yaw = (float) (Math.toDegrees(Math.atan2(d.z, d.x)) - 90.0f);
                 setYawStableServer(yaw);
             }
         }
 
-
-// 2) sheetYaw（砲塔）
         if (target != null) {
-            Vec3d d = target.getEyePos().subtract(this.getPos());
-            if (d.horizontalLengthSquared() > 1.0e-6) {
-                float aimYaw = (float)(MathHelper.atan2(d.z, d.x) * (180.0 / Math.PI)) - 90.0f;
+            Vec3 d = target.getEyePosition().subtract(this.position());
+            if (d.horizontalDistanceSqr() > 1.0e-6) {
+                float aimYaw = (float) (Math.toDegrees(Math.atan2(d.z, d.x)) - 90.0f);
                 setSheetYawServer(aimYaw);
             }
         } else {
-            setSheetYawServer(this.getYaw());
+            setSheetYawServer(this.getYRot());
         }
 
+        ensurePassengerMounted(serverLevel);
 
-        ensurePassengerMounted(sw);
-
-        // ===== 射撃可否 =====
         boolean allowFire = true;
-        if (this.hasVehicle() && this.getVehicle() instanceof TrainEntity t) {
-            allowFire = t.isGunFireEnabled();
+        if (this.getVehicle() instanceof TrainEntity train) {
+            allowFire = train.isGunFireEnabled();
         }
 
         if (allowFire) {
             if (fireCooldown > 0) fireCooldown--;
             if (fireCooldown == 0) {
                 fireCooldown = 12;
-                fireTwinCannonsShell(sw);
+                fireTwinCannonsShell(serverLevel);
             }
         }
     }
-    private LivingEntity findTrainTarget(ServerWorld sw) {
+
+    @Override
+    public boolean hurtServer(ServerLevel level, DamageSource source, float damage) {
+        return false;
+    }
+
+    @Override
+    protected void readAdditionalSaveData(ValueInput input) {
+
+    }
+
+    @Override
+    protected void addAdditionalSaveData(ValueOutput output) {
+
+    }
+
+    private LivingEntity findTrainTarget(ServerLevel serverLevel) {
         if (trainUuid == null) return null;
 
-        Entity t = sw.getEntity(trainUuid);
+        Entity t = serverLevel.getEntity(trainUuid);
         if (!(t instanceof GoGoTrainEntity train) || !train.isAlive()) return null;
 
-        UUID tu = train.getTargetUuid(); // ★ここ
+        UUID tu = train.getTargetUuid();
         if (tu == null) return null;
 
-        Entity e = sw.getEntity(tu);
+        Entity e = serverLevel.getEntity(tu);
         return (e instanceof LivingEntity le && le.isAlive()) ? le : null;
     }
 
-
-
-    private void ensurePassengerMounted(ServerWorld sw) {
+    private void ensurePassengerMounted(ServerLevel serverLevel) {
         if (passengerStudentUuid == null) return;
-        Entity p = sw.getEntity(passengerStudentUuid);
+
+        Entity p = serverLevel.getEntity(passengerStudentUuid);
         if (!(p instanceof AbstractStudentEntity st) || !st.isAlive()) return;
 
         if (st.getVehicle() != this) {
             st.stopRiding();
-            st.startRiding(this, true);
+            st.startRiding(this);
         }
     }
 
-    private void fireTwinCannonsShell(ServerWorld sw) {
-        LivingEntity target = findTarget(sw);
+    private void fireTwinCannonsShell(ServerLevel serverLevel) {
+        LivingEntity target = findTarget(serverLevel);
         if (target == null) {
-            this.dataTracker.set(SYNC_TARGET_EID, -1);
+            this.entityData.set(SYNC_TARGET_EID, -1);
             return;
         }
 
-        // ★ここが超重要：クライアントにターゲットを伝える
-        this.dataTracker.set(SYNC_TARGET_EID, target.getId());
+        this.entityData.set(SYNC_TARGET_EID, target.getId());
 
+        Vec3 startL = getMuzzlePos(WeaponSpec.MuzzleLocator.LEFT_SUB_MUZZLE);
+        Vec3 startR = getMuzzlePos(WeaponSpec.MuzzleLocator.RIGHT_SUB_MUZZLE);
 
-        Vec3d startL = getMuzzlePos(WeaponSpec.MuzzleLocator.LEFT_SUB_MUZZLE);
-        Vec3d startR = getMuzzlePos(WeaponSpec.MuzzleLocator.RIGHT_SUB_MUZZLE);
+        Vec3 dirL = target.getEyePosition().subtract(startL).normalize();
+        Vec3 dirR = target.getEyePosition().subtract(startR).normalize();
 
-        Vec3d dirL = target.getEyePos().subtract(startL).normalize();
-        Vec3d dirR = target.getEyePos().subtract(startR).normalize();
-
-        spawnShell(sw, target, startL, dirL, -1);
-        spawnShell(sw, target, startR, dirR, +1);
+        spawnShell(serverLevel, target, startL, dirL, -1);
+        spawnShell(serverLevel, target, startR, dirR, +1);
     }
 
-    private void spawnShell(ServerWorld sw, LivingEntity target, Vec3d start, Vec3d dir, int curveSign) {
+    private void spawnShell(ServerLevel serverLevel, LivingEntity target, Vec3 start, Vec3 dir, int curveSign) {
         GunTrainShellEntity shell = new GunTrainShellEntity(
                 com.licht_meilleur.blue_student.registry.ModEntities.GUN_TRAIN_SHELL,
-                sw
+                serverLevel
         ).setOwnerUuid(ownerPlayerUuid)
                 .setTarget(target)
                 .setCurveSign(curveSign);
 
-        shell.setPosition(start.x, start.y, start.z);
+        shell.setPos(start.x, start.y, start.z);
+        shell.setDeltaMovement(dir.normalize().scale(1.25));
 
-        double speed = 1.25;
-        shell.setVelocity(dir.normalize().multiply(speed));
-
-        sw.spawnEntity(shell);
+        serverLevel.addFreshEntity(shell);
     }
 
-    private LivingEntity findTarget(ServerWorld sw) {
-        double r = this.mergedMode ? 64.0 : 18.0; // ★合体中は広げる（好みで 48～96）
-        Box box = this.getBoundingBox().expand(r, 6.0, r);
-        var list = sw.getEntitiesByClass(HostileEntity.class, box, LivingEntity::isAlive);
+    private LivingEntity findTarget(ServerLevel serverLevel) {
+        double r = this.mergedMode ? 64.0 : 18.0;
+        AABB box = this.getBoundingBox().inflate(r, 6.0, r);
+        var list = serverLevel.getEntitiesOfClass(Monster.class, box, LivingEntity::isAlive);
         if (list.isEmpty()) return null;
 
-        HostileEntity best = null;
-        double bestD2 = 1e18;
-        for (HostileEntity h : list) {
-            double d2 = this.squaredDistanceTo(h);
-            if (d2 < bestD2) { bestD2 = d2; best = h; }
+        Monster best = null;
+        double bestD2 = Double.MAX_VALUE;
+        for (Monster h : list) {
+            double d2 = this.distanceToSqr(h);
+            if (d2 < bestD2) {
+                bestD2 = d2;
+                best = h;
+            }
         }
         return best;
     }
 
-    private Vec3d getMuzzlePos(WeaponSpec.MuzzleLocator loc) {
-        Vec3d forward = forwardFromYaw(this.getYaw()).normalize();
-        Vec3d right = forward.crossProduct(new Vec3d(0, 1, 0)).normalize();
-        Vec3d base = this.getPos().add(0, 0.75, 0);
+    private Vec3 getMuzzlePos(WeaponSpec.MuzzleLocator loc) {
+        Vec3 forward = forwardFromYaw(this.getYRot()).normalize();
+        Vec3 right = forward.cross(new Vec3(0, 1, 0)).normalize();
+        Vec3 base = this.position().add(0, 0.75, 0);
 
         return switch (loc) {
-            case LEFT_SUB_MUZZLE  -> base.add(right.multiply(-0.75)).add(forward.multiply(0.65));
-            case RIGHT_SUB_MUZZLE -> base.add(right.multiply(+0.75)).add(forward.multiply(0.65));
-            default -> base.add(forward.multiply(0.65));
+            case LEFT_SUB_MUZZLE -> base.add(right.scale(-0.75)).add(forward.scale(0.65));
+            case RIGHT_SUB_MUZZLE -> base.add(right.scale(0.75)).add(forward.scale(0.65));
+            default -> base.add(forward.scale(0.65));
         };
     }
 
-    private static Vec3d forwardFromYaw(float yawDeg) {
-        float r = yawDeg * MathHelper.RADIANS_PER_DEGREE;
-        return new Vec3d(-MathHelper.sin(r), 0, MathHelper.cos(r));
+    private static Vec3 forwardFromYaw(float yawDeg) {
+        float r = yawDeg * ((float) Math.PI / 180.0f);
+        return new Vec3(-Mth.sin(r), 0, Mth.cos(r));
     }
 
     @Override
-    protected void updatePassengerPosition(Entity passenger, PositionUpdater updater) {
-        super.updatePassengerPosition(passenger, updater);
+    protected void positionRider(Entity passenger, MoveFunction moveFunction) {
+        super.positionRider(passenger, moveFunction);
 
-        Vec3d seat = getSeatWorldGun();
-        float y = this.getYaw();
+        Vec3 seat = getSeatWorldGun();
+        float y = this.getYRot();
 
-        passenger.refreshPositionAndAngles(seat.x, seat.y, seat.z, y, 0.0f);
-        passenger.prevYaw = y;
-        passenger.setYaw(y);
+        passenger.setPos(seat.x, seat.y, seat.z);
+        passenger.setYRot(y);
 
         if (passenger instanceof LivingEntity le) {
-            le.bodyYaw = y;
-            le.headYaw = y;
-            le.prevBodyYaw = y;
-            le.prevHeadYaw = y;
+            le.setYBodyRot(y);
+            le.setYHeadRot(y);
         }
 
-        passenger.noClip = true;               // ★これが効く（ブロック衝突で降ろされにくくなる）
-        passenger.setNoGravity(true);          // ★落下や段差でズレにくい
-        passenger.setVelocity(Vec3d.ZERO);
-        passenger.velocityModified = true;
+        passenger.noPhysics = true;
+        passenger.setNoGravity(true);
+        passenger.setDeltaMovement(Vec3.ZERO);
     }
 
-    @Override
-    protected void readCustomDataFromNbt(NbtCompound nbt) {
-        if (nbt.containsUuid("OwnerP")) ownerPlayerUuid = nbt.getUuid("OwnerP");
-        if (nbt.containsUuid("Train")) trainUuid = nbt.getUuid("Train");
-        if (nbt.containsUuid("Passenger")) passengerStudentUuid = nbt.getUuid("Passenger");
-        fireCooldown = nbt.getInt("FireCd");
-        lifeTicks = nbt.getInt("Life");
+    private void loadGoGoGunTrainData(CompoundTag tag) {
+        String owner = tag.getString("OwnerP").orElse("");
+        ownerPlayerUuid = owner.isEmpty() ? null : UUID.fromString(owner);
 
-        if (nbt.contains("Ax")) {
-            anchorPos = new Vec3d(nbt.getDouble("Ax"), nbt.getDouble("Ay"), nbt.getDouble("Az"));
+        String train = tag.getString("Train").orElse("");
+        trainUuid = train.isEmpty() ? null : UUID.fromString(train);
+
+        String passenger = tag.getString("Passenger").orElse("");
+        passengerStudentUuid = passenger.isEmpty() ? null : UUID.fromString(passenger);
+
+        fireCooldown = tag.getInt("FireCd").orElse(0);
+        lifeTicks = tag.getInt("Life").orElse(0);
+
+        if (tag.contains("Ax")) {
+            anchorPos = new Vec3(
+                    tag.getDouble("Ax").orElse(0.0),
+                    tag.getDouble("Ay").orElse(0.0),
+                    tag.getDouble("Az").orElse(0.0)
+            );
+        } else {
+            anchorPos = null;
         }
-        // SYNC_TARGET_EIDはNBTに無くてもOK（毎回射撃で更新される）
     }
 
-    @Override
-    protected void writeCustomDataToNbt(NbtCompound nbt) {
-        if (ownerPlayerUuid != null) nbt.putUuid("OwnerP", ownerPlayerUuid);
-        if (trainUuid != null) nbt.putUuid("Train", trainUuid);
-        if (passengerStudentUuid != null) nbt.putUuid("Passenger", passengerStudentUuid);
-        nbt.putInt("FireCd", fireCooldown);
-        nbt.putInt("Life", lifeTicks);
+    private void saveGoGoGunTrainData(CompoundTag tag) {
+        if (ownerPlayerUuid != null) tag.putString("OwnerP", ownerPlayerUuid.toString());
+        if (trainUuid != null) tag.putString("Train", trainUuid.toString());
+        if (passengerStudentUuid != null) tag.putString("Passenger", passengerStudentUuid.toString());
+
+        tag.putInt("FireCd", fireCooldown);
+        tag.putInt("Life", lifeTicks);
 
         if (anchorPos != null) {
-            nbt.putDouble("Ax", anchorPos.x);
-            nbt.putDouble("Ay", anchorPos.y);
-            nbt.putDouble("Az", anchorPos.z);
+            tag.putDouble("Ax", anchorPos.x);
+            tag.putDouble("Ay", anchorPos.y);
+            tag.putDouble("Az", anchorPos.z);
         }
     }
 
-    @Override public AnimatableInstanceCache getAnimatableInstanceCache() { return cache; }
+    @Override
+    public AnimatableInstanceCache getAnimatableInstanceCache() {
+        return cache;
+    }
 
     @Override
     public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
-        controllers.add(new AnimationController<>(this, "controller", 0, state -> {
-            state.setAndContinue(RawAnimation.begin().thenLoop("animation.go"));
-            return PlayState.CONTINUE;
-        }));
+        controllers.add(new AnimationController<>(
+                "controller",
+                0,
+                state -> {
+                    state.setAnimation(RawAnimation.begin().thenLoop("animation.go"));
+                    return PlayState.CONTINUE;
+                }
+        ));
     }
 
-    private static Vec3d locatorPxToWorld(Vec3d locPx, float yawDeg, Vec3d basePos) {
+    private static Vec3 locatorPxToWorld(Vec3 locPx, float yawDeg, Vec3 basePos) {
         double yawRad = Math.toRadians(yawDeg);
         double cos = Math.cos(yawRad);
         double sin = Math.sin(yawRad);
@@ -343,19 +403,19 @@ public class GoGoGunTrainEntity extends Entity implements GeoEntity {
         return basePos.add(rx, ly, rz);
     }
 
-    private static final Vec3d SEAT_PX   = new Vec3d(0.4, 13.4, 6.6);
-    private static final Vec3d SEAT_TUNE = new Vec3d(0.0, 0.0, -12.0);
+    private static final Vec3 SEAT_PX = new Vec3(0.4, 13.4, 6.6);
+    private static final Vec3 SEAT_TUNE = new Vec3(0.0, 0.0, -12.0);
 
-    private Vec3d getSeatWorldGun() {
-        return locatorPxToWorld(SEAT_PX.add(SEAT_TUNE), this.getYaw(), this.getPos());
+    private Vec3 getSeatWorldGun() {
+        return locatorPxToWorld(SEAT_PX.add(SEAT_TUNE), this.getYRot(), this.position());
     }
 
-    private boolean isOwnerAlive(ServerWorld sw) {
+    private boolean isOwnerAlive(ServerLevel serverLevel) {
         if (ownerPlayerUuid == null) return false;
 
-        for (HikariEntity h : sw.getEntitiesByClass(
+        for (HikariEntity h : serverLevel.getEntitiesOfClass(
                 HikariEntity.class,
-                this.getBoundingBox().expand(128),
+                this.getBoundingBox().inflate(128.0),
                 e -> e.isAlive()
         )) {
             if (ownerPlayerUuid.equals(h.getOwnerUuid())) return true;
@@ -363,9 +423,9 @@ public class GoGoGunTrainEntity extends Entity implements GeoEntity {
         return false;
     }
 
-    private void discardAndNotify(ServerWorld sw) {
+    private void discardAndNotify(ServerLevel serverLevel) {
         if (passengerStudentUuid != null) {
-            Entity p = sw.getEntity(passengerStudentUuid);
+            Entity p = serverLevel.getEntity(passengerStudentUuid);
             if (p instanceof HikariEntity h) {
                 h.startGunTrainCooldown();
             }
@@ -373,45 +433,40 @@ public class GoGoGunTrainEntity extends Entity implements GeoEntity {
         this.discard();
     }
 
-    // GoGoGunTrainEntity 内
-    private static final double FOLLOW_BACK  = 2.4;  // 後ろ距離
-    private static final double FOLLOW_RIGHT = 0.0;  // 横
-    private static final double FOLLOW_UP    = 0.0;  // 高さ
+    private static final double FOLLOW_BACK = 2.4;
+    private static final double FOLLOW_RIGHT = 0.0;
+    private static final double FOLLOW_UP = 0.0;
 
-    private void tickFollowTrain(ServerWorld sw) {
+    private void tickFollowTrain(ServerLevel serverLevel) {
         if (!mergedMode) return;
         if (trainUuid == null) return;
 
-        Entity t = sw.getEntity(trainUuid);
+        Entity t = serverLevel.getEntity(trainUuid);
         if (!(t instanceof GoGoTrainEntity train) || !train.isAlive()) return;
 
-        float yaw = train.getYaw();
-        Vec3d forward = forwardFromYaw(yaw).normalize();
-        Vec3d right = forward.crossProduct(new Vec3d(0, 1, 0)).normalize();
+        float yaw = train.getYRot();
+        Vec3 forward = forwardFromYaw(yaw).normalize();
+        Vec3 right = forward.cross(new Vec3(0, 1, 0)).normalize();
 
-        Vec3d base = train.getPos();
-        Vec3d pos = base
+        Vec3 base = train.position();
+        Vec3 pos = base
                 .add(0, FOLLOW_UP, 0)
-                .add(forward.multiply(-FOLLOW_BACK))
-                .add(right.multiply(FOLLOW_RIGHT));
+                .add(forward.scale(-FOLLOW_BACK))
+                .add(right.scale(FOLLOW_RIGHT));
 
-        // ★テレポ系APIを避ける（これがブレの主因）
-        this.setPosition(pos.x, pos.y, pos.z);
-        this.setYaw(MathHelper.wrapDegrees(yaw));
-        this.setPitch(0f);
+        this.setPos(pos.x, pos.y, pos.z);
+        this.setYRot(Mth.wrapDegrees(yaw));
+        this.setXRot(0.0f);
+        this.setYBodyRot(this.getYRot());
+        this.setYHeadRot(this.getYRot());
 
-        // 速度はゼロ固定
-        this.setVelocity(Vec3d.ZERO);
-        this.velocityModified = true;
+        this.setDeltaMovement(Vec3.ZERO);
 
-        // ★同期値（モデル用）
-        this.dataTracker.set(SYNC_BODY_YAW, MathHelper.wrapDegrees(yaw));
+        this.entityData.set(SYNC_BODY_YAW, Mth.wrapDegrees(yaw));
 
-        // prev を潰して補間のブレを減らす
-        this.prevX = this.getX();
-        this.prevY = this.getY();
-        this.prevZ = this.getZ();
-        this.prevYaw = this.getYaw();
+        this.xOld = this.getX();
+        this.yOld = this.getY();
+        this.zOld = this.getZ();
+        this.yRotO = this.getYRot();
     }
-
 }

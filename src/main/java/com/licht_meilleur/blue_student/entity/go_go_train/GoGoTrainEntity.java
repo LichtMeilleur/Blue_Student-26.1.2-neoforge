@@ -1,27 +1,36 @@
 package com.licht_meilleur.blue_student.entity.go_go_train;
 
+import com.geckolib.animatable.GeoEntity;
+import com.geckolib.animatable.instance.AnimatableInstanceCache;
+import com.geckolib.animatable.manager.AnimatableManager;
+import com.geckolib.animation.AnimationController;
+import com.geckolib.animation.RawAnimation;
+import com.geckolib.animation.object.PlayState;
+import com.geckolib.util.GeckoLibUtil;
 import com.licht_meilleur.blue_student.entity.HikariEntity;
 import com.licht_meilleur.blue_student.entity.NozomiEntity;
 import com.licht_meilleur.blue_student.entity.projectile.GunTrainShellEntity;
 import com.licht_meilleur.blue_student.registry.ModEntities;
 import com.licht_meilleur.blue_student.weapon.WeaponSpec;
-import net.minecraft.entity.*;
-import net.minecraft.entity.damage.DamageSource;
-import net.minecraft.entity.data.DataTracker;
-import net.minecraft.entity.data.TrackedData;
-import net.minecraft.entity.data.TrackedDataHandlerRegistry;
-import net.minecraft.entity.mob.HostileEntity;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.*;
-import net.minecraft.world.RaycastContext;
-import net.minecraft.world.World;
-import software.bernie.geckolib.animatable.GeoEntity;
-import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
-import software.bernie.geckolib.core.animation.*;
-import software.bernie.geckolib.core.object.PlayState;
-import software.bernie.geckolib.util.GeckoLibUtil;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.Mth;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.MoverType;
+import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.UUID;
 
@@ -29,157 +38,193 @@ public class GoGoTrainEntity extends Entity implements GeoEntity {
 
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
-    // ===== link =====
     private UUID ownerPlayerUuid;
     private UUID targetUuid;
     private UUID nozomiPassengerUuid;
     private UUID hikariPassengerUuid;
 
-    // ===== life =====
     private int lifeTicks = 0;
     private static final int MAX_LIFE = 20 * 15;
 
-    // ===== phase =====
     private int phaseTicks = 0;
     private int phaseEndTick = 0;
     private boolean isCruisePhase = true;
 
     private static final int CRUISE_TICKS = 20 * 5;
-    private static final int CHARGE_TICKS = 20 * 1;
+    private static final int CHARGE_TICKS = 20;
 
     private static final double CRUISE_SPEED = 0.35;
     private static final double CHARGE_SPEED = 1.25;
 
-    // ===== cruise (free) =====
     private float theta = 0f;
-    private float radius = 9.0f; // ★半径大きめ（好みで 8～12）
+    private float radius = 9.0f;
     private float omega = 0.12f;
     private boolean clockwise = true;
 
-    // ===== charge hit =====
     private static final float CHARGE_HIT_RADIUS = 1.6f;
     private static final float CHARGE_DAMAGE = 8.0f;
     private static final double CHARGE_KB_H = 1.8;
     private static final double CHARGE_KB_Y = 0.55;
     private static final int CHARGE_MIN_AGE = 6;
 
-    // ===== gun =====
     private int fireCooldown = 0;
     private static final int FIRE_CD = 12;
 
-    // ===== seats =====
-    // ノゾミの後方にヒカリを配置
-    private static final double HK_BACK = 2.8;   // ★少し広げた（好みで）
+    private static final double HK_BACK = 2.8;
     private static final double HK_RIGHT = 0.0;
     private static final double HK_UP = 0.0;
 
-    // ===== sync =====
-    private static final TrackedData<Float> SYNC_BODY_YAW =
-            DataTracker.registerData(GoGoTrainEntity.class, TrackedDataHandlerRegistry.FLOAT);
+    private static final EntityDataAccessor<Float> SYNC_BODY_YAW =
+            SynchedEntityData.defineId(GoGoTrainEntity.class, EntityDataSerializers.FLOAT);
 
-    private static final TrackedData<Float> SYNC_SHEET2_YAW =
-            DataTracker.registerData(GoGoTrainEntity.class, TrackedDataHandlerRegistry.FLOAT);
+    private static final EntityDataAccessor<Float> SYNC_SHEET2_YAW =
+            SynchedEntityData.defineId(GoGoTrainEntity.class, EntityDataSerializers.FLOAT);
 
-    private static final TrackedData<Integer> SYNC_TARGET_EID =
-            DataTracker.registerData(GoGoTrainEntity.class, TrackedDataHandlerRegistry.INTEGER);
+    private static final EntityDataAccessor<Integer> SYNC_TARGET_EID =
+            SynchedEntityData.defineId(GoGoTrainEntity.class, EntityDataSerializers.INT);
 
-    public GoGoTrainEntity(EntityType<?> type, World world) {
-        super(type, world);
+    public GoGoTrainEntity(EntityType<?> type, Level level) {
+        super(type, level);
         this.setNoGravity(true);
-        this.noClip = true;
+        this.noPhysics = true;
     }
 
     @Override
-    protected void initDataTracker() {
-        this.dataTracker.startTracking(SYNC_BODY_YAW, 0.0f);
-        this.dataTracker.startTracking(SYNC_SHEET2_YAW, 0.0f);
-        this.dataTracker.startTracking(SYNC_TARGET_EID, -1);
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        builder.define(SYNC_BODY_YAW, 0.0f);
+        builder.define(SYNC_SHEET2_YAW, 0.0f);
+        builder.define(SYNC_TARGET_EID, -1);
     }
 
-    // ===== setters =====
-    public GoGoTrainEntity setOwnerPlayerUuid(UUID id) { this.ownerPlayerUuid = id; return this; }
-    public GoGoTrainEntity setTargetUuid(UUID id) { this.targetUuid = id; return this; }
-    public GoGoTrainEntity setNozomiPassengerUuid(UUID id) { this.nozomiPassengerUuid = id; return this; }
-    public GoGoTrainEntity setHikariPassengerUuid(UUID id) { this.hikariPassengerUuid = id; return this; }
-    public GoGoTrainEntity setClockwise(boolean clockwise) { this.clockwise = clockwise; return this; }
+    public GoGoTrainEntity setOwnerPlayerUuid(UUID id) {
+        this.ownerPlayerUuid = id;
+        return this;
+    }
 
-    public UUID getOwnerPlayerUuid() { return ownerPlayerUuid; }
-    public UUID getTargetUuid() { return this.targetUuid; }
+    public GoGoTrainEntity setTargetUuid(UUID id) {
+        this.targetUuid = id;
+        return this;
+    }
 
-    // ===== model read =====
-    public float getBodyYawDegSynced() { return this.dataTracker.get(SYNC_BODY_YAW); }
-    public float getSheet2YawDeg()     { return this.dataTracker.get(SYNC_SHEET2_YAW); }
-    public int getSyncedTargetEntityId() { return this.dataTracker.get(SYNC_TARGET_EID); }
+    public GoGoTrainEntity setNozomiPassengerUuid(UUID id) {
+        this.nozomiPassengerUuid = id;
+        return this;
+    }
+
+    public GoGoTrainEntity setHikariPassengerUuid(UUID id) {
+        this.hikariPassengerUuid = id;
+        return this;
+    }
+
+    public GoGoTrainEntity setClockwise(boolean clockwise) {
+        this.clockwise = clockwise;
+        return this;
+    }
+
+    public UUID getOwnerPlayerUuid() {
+        return ownerPlayerUuid;
+    }
+
+    public UUID getTargetUuid() {
+        return this.targetUuid;
+    }
+
+    public float getBodyYawDegSynced() {
+        return this.entityData.get(SYNC_BODY_YAW);
+    }
+
+    public float getSheet2YawDeg() {
+        return this.entityData.get(SYNC_SHEET2_YAW);
+    }
+
+    public int getSyncedTargetEntityId() {
+        return this.entityData.get(SYNC_TARGET_EID);
+    }
 
     private void setBodyYawSynced(float yawDeg) {
-        float y = MathHelper.wrapDegrees(yawDeg);
-        this.prevYaw = y;
-        this.setYaw(y);
-        this.setPitch(0.0f);
-        this.dataTracker.set(SYNC_BODY_YAW, y);
+        float y = Mth.wrapDegrees(yawDeg);
+        this.setYRot(y);
+        this.setXRot(0.0f);
+        this.setYBodyRot(y);
+        this.setYHeadRot(y);
+        this.entityData.set(SYNC_BODY_YAW, y);
     }
 
     private void setSheet2YawServer(float yawDeg) {
-        this.dataTracker.set(SYNC_SHEET2_YAW, MathHelper.wrapDegrees(yawDeg));
+        this.entityData.set(SYNC_SHEET2_YAW, Mth.wrapDegrees(yawDeg));
     }
 
     @Override
     public void tick() {
         super.tick();
 
-        if (this.getWorld().isClient) return;
-        if (!(this.getWorld() instanceof ServerWorld sw)) return;
+        if (this.level().isClientSide()) return;
+        if (!(this.level() instanceof ServerLevel serverLevel)) return;
 
-        if (++lifeTicks > MAX_LIFE) { discardAndRelease(); return; }
-        if (!isOwnerAlive(sw))      { discardAndRelease(); return; }
-
-        ensurePassengersMounted(sw);
-
-        Entity target = (targetUuid != null) ? sw.getEntity(targetUuid) : null;
-        if (target == null || !target.isAlive()) {
-            this.setVelocity(Vec3d.ZERO);
-            this.dataTracker.set(SYNC_TARGET_EID, -1);
+        if (++lifeTicks > MAX_LIFE) {
+            discardAndRelease();
+            return;
+        }
+        if (!isOwnerAlive(serverLevel)) {
+            discardAndRelease();
             return;
         }
 
-        this.dataTracker.set(SYNC_TARGET_EID, target.getId());
+        ensurePassengersMounted(serverLevel);
 
-        // ===== turret aim (always) =====
+        Entity target = (targetUuid != null) ? serverLevel.getEntity(targetUuid) : null;
+        if (target == null || !target.isAlive()) {
+            this.setDeltaMovement(Vec3.ZERO);
+            this.entityData.set(SYNC_TARGET_EID, -1);
+            return;
+        }
+
+        this.entityData.set(SYNC_TARGET_EID, target.getId());
+
         float targetYaw = computeYawToTarget(target);
         setSheet2YawServer(targetYaw);
 
-        // ===== phase velocity decide =====
-        tickPhase(sw, target);
+        tickPhase(serverLevel, target);
 
-        // ===== fire (cruise only) =====
         if (isCruisePhase) {
             if (fireCooldown > 0) fireCooldown--;
             if (fireCooldown == 0) {
                 fireCooldown = FIRE_CD;
-                if (target instanceof LivingEntity le) fireTwinCannonsShell(sw, le);
+                if (target instanceof LivingEntity le) {
+                    fireTwinCannonsShell(serverLevel, le);
+                }
             }
         }
 
-        // ===== move once =====
-        this.move(MovementType.SELF, this.getVelocity());
-
-        // ===== face velocity =====
+        this.move(MoverType.SELF, this.getDeltaMovement());
         faceVelocityAndSyncYaw();
+        lockHikariBehindNozomi(serverLevel, targetYaw);
+    }
 
-        // ===== hikari lock (pos = behind nozomi, yaw = targetYaw) =====
-        lockHikariBehindNozomi(sw, targetYaw);
+    @Override
+    public boolean hurtServer(ServerLevel level, DamageSource source, float damage) {
+        return false;
+    }
+
+    @Override
+    protected void readAdditionalSaveData(ValueInput input) {
+
+    }
+
+    @Override
+    protected void addAdditionalSaveData(ValueOutput output) {
+
     }
 
     private float computeYawToTarget(Entity target) {
-        Vec3d d = target.getEyePos().subtract(this.getPos());
-        if (d.horizontalLengthSquared() > 1.0e-6) {
-            return (float)(MathHelper.atan2(d.z, d.x) * (180.0 / Math.PI)) - 90.0f;
+        Vec3 d = target.getEyePosition().subtract(this.position());
+        if (d.horizontalDistanceSqr() > 1.0e-6) {
+            return (float) (Math.toDegrees(Math.atan2(d.z, d.x)) - 90.0f);
         }
-        return this.getYaw();
+        return this.getYRot();
     }
 
-    // ===== phases =====
-    private void tickPhase(ServerWorld sw, Entity target) {
+    private void tickPhase(ServerLevel serverLevel, Entity target) {
         if (phaseEndTick <= 0) {
             isCruisePhase = true;
             phaseTicks = 0;
@@ -192,254 +237,247 @@ public class GoGoTrainEntity extends Entity implements GeoEntity {
             phaseEndTick = isCruisePhase ? CRUISE_TICKS : CHARGE_TICKS;
         }
 
-        if (isCruisePhase) tickCruiseFree(sw, target);
-        else tickCharge(sw, target);
+        if (isCruisePhase) {
+            tickCruiseFree(serverLevel, target);
+        } else {
+            tickCharge(serverLevel, target);
+        }
 
         phaseTicks++;
     }
 
-    // ===== cruise =====
-    private void tickCruiseFree(ServerWorld sw, Entity target) {
-        theta += (clockwise ? +1 : -1) * Math.abs(omega);
+    private void tickCruiseFree(ServerLevel serverLevel, Entity target) {
+        theta += (clockwise ? 1 : -1) * Math.abs(omega);
 
-        Vec3d goal = pickCruiseGoal(sw, target);
-        Vec3d dir = goal.subtract(this.getPos());
+        Vec3 goal = pickCruiseGoal(serverLevel, target);
+        Vec3 dir = goal.subtract(this.position());
 
-        Vec3d v = (dir.lengthSquared() > 1e-6)
-                ? dir.normalize().multiply(CRUISE_SPEED)
-                : Vec3d.ZERO;
+        Vec3 v = dir.lengthSqr() > 1.0e-6
+                ? dir.normalize().scale(CRUISE_SPEED)
+                : Vec3.ZERO;
 
-        this.setVelocity(v);
+        this.setDeltaMovement(v);
     }
 
-    private Vec3d pickCruiseGoal(ServerWorld sw, Entity target) {
-        Vec3d center = target.getPos();
+    private Vec3 pickCruiseGoal(ServerLevel serverLevel, Entity target) {
+        Vec3 center = target.position();
 
         float base = theta;
-        float step = 0.70f; // ★少し強め（通り道探し）
+        float step = 0.70f;
         double r = radius;
         double gy = center.y + 0.2;
 
         for (int i = 0; i < 6; i++) {
-            float a = base + (clockwise ? +1 : -1) * (i * step);
+            float a = base + (clockwise ? 1 : -1) * (i * step);
             double gx = center.x + Math.cos(a) * r;
             double gz = center.z + Math.sin(a) * r;
-            Vec3d goal = new Vec3d(gx, gy, gz);
+            Vec3 goal = new Vec3(gx, gy, gz);
 
-            if (isLineClear(sw, this.getPos(), goal)) {
+            if (isLineClear(serverLevel, this.position(), goal)) {
                 theta = a;
                 return goal;
             }
         }
 
-        return new Vec3d(center.x, gy, center.z);
+        return new Vec3(center.x, gy, center.z);
     }
 
-    private boolean isLineClear(ServerWorld sw, Vec3d from, Vec3d to) {
-        HitResult hit = sw.raycast(new RaycastContext(
-                from, to,
-                RaycastContext.ShapeType.COLLIDER,
-                RaycastContext.FluidHandling.NONE,
+    private boolean isLineClear(ServerLevel serverLevel, Vec3 from, Vec3 to) {
+        HitResult hit = serverLevel.clip(new ClipContext(
+                from,
+                to,
+                ClipContext.Block.COLLIDER,
+                ClipContext.Fluid.NONE,
                 this
         ));
         return hit.getType() == HitResult.Type.MISS;
     }
 
-    // ===== charge =====
-    private void tickCharge(ServerWorld sw, Entity target) {
-        Vec3d from = this.getPos();
-        Vec3d to = target.getPos().add(0, 0.2, 0);
-        Vec3d d = to.subtract(from);
+    private void tickCharge(ServerLevel serverLevel, Entity target) {
+        Vec3 from = this.position();
+        Vec3 to = target.position().add(0, 0.2, 0);
+        Vec3 d = to.subtract(from);
 
-        if (d.lengthSquared() > 1e-6) this.setVelocity(d.normalize().multiply(CHARGE_SPEED));
-        else this.setVelocity(Vec3d.ZERO);
+        if (d.lengthSqr() > 1.0e-6) {
+            this.setDeltaMovement(d.normalize().scale(CHARGE_SPEED));
+        } else {
+            this.setDeltaMovement(Vec3.ZERO);
+        }
 
-        if (lifeTicks > CHARGE_MIN_AGE) tryChargeHit(sw);
+        if (lifeTicks > CHARGE_MIN_AGE) {
+            tryChargeHit(serverLevel);
+        }
     }
 
-    private void tryChargeHit(ServerWorld sw) {
-        Vec3d c = this.getPos();
-        Box box = new Box(c, c).expand(CHARGE_HIT_RADIUS, 1.6, CHARGE_HIT_RADIUS);
+    private void tryChargeHit(ServerLevel serverLevel) {
+        Vec3 c = this.position();
+        AABB box = new AABB(c, c).inflate(CHARGE_HIT_RADIUS, 1.6, CHARGE_HIT_RADIUS);
 
-        var list = sw.getEntitiesByClass(HostileEntity.class, box, LivingEntity::isAlive);
+        var list = serverLevel.getEntitiesOfClass(Monster.class, box, LivingEntity::isAlive);
         if (list.isEmpty()) return;
 
-        HostileEntity best = null;
-        double bestD2 = 1e18;
+        Monster best = null;
+        double bestD2 = Double.MAX_VALUE;
         for (var h : list) {
-            double d2 = h.squaredDistanceTo(c);
-            if (d2 < bestD2) { bestD2 = d2; best = h; }
+            double d2 = h.distanceToSqr(c);
+            if (d2 < bestD2) {
+                bestD2 = d2;
+                best = h;
+            }
         }
         if (best == null) return;
 
-        DamageSource src = sw.getDamageSources().generic();
-        best.damage(src, CHARGE_DAMAGE);
+        DamageSource src = serverLevel.damageSources().generic();
+        best.hurt(src, CHARGE_DAMAGE);
 
         applyStrongKnockback(best, c);
     }
 
-    private void applyStrongKnockback(LivingEntity victim, Vec3d fromPos) {
-        Vec3d push = victim.getPos().subtract(fromPos);
-        if (push.horizontalLengthSquared() < 1e-6) push = new Vec3d(0, 0, 1);
+    private void applyStrongKnockback(LivingEntity victim, Vec3 fromPos) {
+        Vec3 push = victim.position().subtract(fromPos);
+        if (push.horizontalDistanceSqr() < 1.0e-6) push = new Vec3(0, 0, 1);
 
-        Vec3d dir = new Vec3d(push.x, 0, push.z).normalize();
-        Vec3d kb = dir.multiply(CHARGE_KB_H).add(0, CHARGE_KB_Y, 0);
+        Vec3 dir = new Vec3(push.x, 0, push.z).normalize();
+        Vec3 kb = dir.scale(CHARGE_KB_H).add(0, CHARGE_KB_Y, 0);
 
-        victim.setVelocity(kb);
-        victim.velocityModified = true;
+        victim.setDeltaMovement(kb);
     }
 
-    // ===== yaw from velocity =====
     private void faceVelocityAndSyncYaw() {
-        Vec3d v = this.getVelocity();
-        if (v.horizontalLengthSquared() < 1.0e-6) {
-            this.dataTracker.set(SYNC_BODY_YAW, MathHelper.wrapDegrees(this.getYaw()));
+        Vec3 v = this.getDeltaMovement();
+        if (v.horizontalDistanceSqr() < 1.0e-6) {
+            this.entityData.set(SYNC_BODY_YAW, Mth.wrapDegrees(this.getYRot()));
             return;
         }
-        float yaw = (float)(MathHelper.atan2(v.z, v.x) * (180.0 / Math.PI)) - 90.0f;
+
+        float yaw = (float) (Math.toDegrees(Math.atan2(v.z, v.x)) - 90.0f);
         setBodyYawSynced(yaw);
     }
 
-    // ===== gun fire =====
-    private void fireTwinCannonsShell(ServerWorld sw, LivingEntity target) {
-        Vec3d startL = getMuzzlePos(WeaponSpec.MuzzleLocator.LEFT_SUB_MUZZLE);
-        Vec3d startR = getMuzzlePos(WeaponSpec.MuzzleLocator.RIGHT_SUB_MUZZLE);
+    private void fireTwinCannonsShell(ServerLevel serverLevel, LivingEntity target) {
+        Vec3 startL = getMuzzlePos(WeaponSpec.MuzzleLocator.LEFT_SUB_MUZZLE);
+        Vec3 startR = getMuzzlePos(WeaponSpec.MuzzleLocator.RIGHT_SUB_MUZZLE);
 
-        Vec3d dirL = target.getEyePos().subtract(startL).normalize();
-        Vec3d dirR = target.getEyePos().subtract(startR).normalize();
+        Vec3 dirL = target.getEyePosition().subtract(startL).normalize();
+        Vec3 dirR = target.getEyePosition().subtract(startR).normalize();
 
-        spawnShell(sw, target, startL, dirL, -1);
-        spawnShell(sw, target, startR, dirR, +1);
+        spawnShell(serverLevel, target, startL, dirL, -1);
+        spawnShell(serverLevel, target, startR, dirR, +1);
     }
 
-    private void spawnShell(ServerWorld sw, LivingEntity target, Vec3d start, Vec3d dir, int curveSign) {
-        GunTrainShellEntity shell = new GunTrainShellEntity(ModEntities.GUN_TRAIN_SHELL, sw)
+    private void spawnShell(ServerLevel serverLevel, LivingEntity target, Vec3 start, Vec3 dir, int curveSign) {
+        GunTrainShellEntity shell = new GunTrainShellEntity(ModEntities.GUN_TRAIN_SHELL, serverLevel)
                 .setOwnerUuid(ownerPlayerUuid)
                 .setTarget(target)
                 .setCurveSign(curveSign);
 
-        shell.setPosition(start.x, start.y, start.z);
-        shell.setVelocity(dir.normalize().multiply(1.25));
-        sw.spawnEntity(shell);
+        shell.setPos(start.x, start.y, start.z);
+        shell.setDeltaMovement(dir.normalize().scale(1.25));
+        serverLevel.addFreshEntity(shell);
     }
 
-    private Vec3d getMuzzlePos(WeaponSpec.MuzzleLocator loc) {
-        Vec3d forward = forwardFromYaw(this.getYaw()).normalize();
-        Vec3d right = forward.crossProduct(new Vec3d(0, 1, 0)).normalize();
-        Vec3d base = this.getPos().add(0, 0.75, 0);
+    private Vec3 getMuzzlePos(WeaponSpec.MuzzleLocator loc) {
+        Vec3 forward = forwardFromYaw(this.getYRot()).normalize();
+        Vec3 right = forward.cross(new Vec3(0, 1, 0)).normalize();
+        Vec3 base = this.position().add(0, 0.75, 0);
 
         return switch (loc) {
-            case LEFT_SUB_MUZZLE  -> base.add(right.multiply(-0.75)).add(forward.multiply(0.65));
-            case RIGHT_SUB_MUZZLE -> base.add(right.multiply(+0.75)).add(forward.multiply(0.65));
-            default -> base.add(forward.multiply(0.65));
+            case LEFT_SUB_MUZZLE -> base.add(right.scale(-0.75)).add(forward.scale(0.65));
+            case RIGHT_SUB_MUZZLE -> base.add(right.scale(0.75)).add(forward.scale(0.65));
+            default -> base.add(forward.scale(0.65));
         };
     }
 
-    private static Vec3d forwardFromYaw(float yawDeg) {
-        float r = yawDeg * MathHelper.RADIANS_PER_DEGREE;
-        return new Vec3d(-MathHelper.sin(r), 0, MathHelper.cos(r));
+    private static Vec3 forwardFromYaw(float yawDeg) {
+        float r = yawDeg * ((float) Math.PI / 180.0f);
+        return new Vec3(-Mth.sin(r), 0, Mth.cos(r));
     }
 
-    // ===== passengers =====
-    private void ensurePassengersMounted(ServerWorld sw) {
-        // ノゾミだけ騎乗（ヒカリは固定配置で制御）
+    private void ensurePassengersMounted(ServerLevel serverLevel) {
         if (nozomiPassengerUuid != null) {
-            Entity n = sw.getEntity(nozomiPassengerUuid);
+            Entity n = serverLevel.getEntity(nozomiPassengerUuid);
             if (n instanceof NozomiEntity noz && noz.isAlive()) {
                 if (noz.getVehicle() != this) {
                     noz.stopRiding();
-                    noz.startRiding(this, true);
+                    noz.startRiding(this);
                 }
             }
         }
     }
 
     @Override
-    protected void updatePassengerPosition(Entity passenger, PositionUpdater updater) {
-        float bodyYaw = this.getYaw();
+    protected void positionRider(Entity passenger, MoveFunction moveFunction) {
+        float bodyYaw = this.getYRot();
 
         if (passenger instanceof NozomiEntity) {
-            Vec3d seat = getSeatWorldNozomi();
-            updater.accept(passenger, seat.x, seat.y, seat.z);
+            Vec3 seat = getSeatWorldNozomi();
+            passenger.setPos(seat.x, seat.y, seat.z);
             setPassengerYawOnly(passenger, bodyYaw);
             return;
         }
 
-        Vec3d seat = this.getPos().add(0, 0.9, 0);
-        updater.accept(passenger, seat.x, seat.y, seat.z);
+        Vec3 seat = this.position().add(0, 0.9, 0);
+        passenger.setPos(seat.x, seat.y, seat.z);
         setPassengerYawOnly(passenger, bodyYaw);
     }
 
     private void setPassengerYawOnly(Entity passenger, float yaw) {
-        passenger.prevYaw = yaw;
-        passenger.setYaw(yaw);
+        passenger.setYRot(yaw);
 
         if (passenger instanceof LivingEntity le) {
-            le.bodyYaw = yaw;
-            le.headYaw = yaw;
-            le.prevBodyYaw = yaw;
-            le.prevHeadYaw = yaw;
+            le.setYBodyRot(yaw);
+            le.setYHeadRot(yaw);
         }
     }
 
-    private Vec3d getSeatWorldNozomi() {
-        Vec3d forward = forwardFromYaw(this.getYaw()).normalize();
-        Vec3d right = forward.crossProduct(new Vec3d(0, 1, 0)).normalize();
+    private Vec3 getSeatWorldNozomi() {
+        Vec3 forward = forwardFromYaw(this.getYRot()).normalize();
+        Vec3 right = forward.cross(new Vec3(0, 1, 0)).normalize();
 
-        return this.getPos()
+        return this.position()
                 .add(0, 0.90, 0)
-                .add(forward.multiply(-0.10))
-                .add(right.multiply(0.00));
+                .add(forward.scale(-0.10))
+                .add(right.scale(0.00));
     }
 
-    private void lockHikariBehindNozomi(ServerWorld sw, float lookYaw) {
+    private void lockHikariBehindNozomi(ServerLevel serverLevel, float lookYaw) {
         if (hikariPassengerUuid == null || nozomiPassengerUuid == null) return;
 
-        Entity h = sw.getEntity(hikariPassengerUuid);
-        Entity n = sw.getEntity(nozomiPassengerUuid);
+        Entity h = serverLevel.getEntity(hikariPassengerUuid);
+        Entity n = serverLevel.getEntity(nozomiPassengerUuid);
 
         if (!(h instanceof HikariEntity hk) || !hk.isAlive()) return;
         if (!(n instanceof NozomiEntity noz) || !noz.isAlive()) return;
 
-        if (hk.hasVehicle()) hk.stopRiding();
+        if (hk.getVehicle() != null) hk.stopRiding();
 
-        float baseYaw = noz.getYaw();
-        Vec3d forward = forwardFromYaw(baseYaw).normalize();
-        Vec3d right = forward.crossProduct(new Vec3d(0, 1, 0)).normalize();
+        float baseYaw = noz.getYRot();
+        Vec3 forward = forwardFromYaw(baseYaw).normalize();
+        Vec3 right = forward.cross(new Vec3(0, 1, 0)).normalize();
 
-        Vec3d base = noz.getPos();
-        Vec3d pos = base
+        Vec3 base = noz.position();
+        Vec3 pos = base
                 .add(0, HK_UP, 0)
-                .add(forward.multiply(-HK_BACK))
-                .add(right.multiply(HK_RIGHT));
+                .add(forward.scale(-HK_BACK))
+                .add(right.scale(HK_RIGHT));
 
         hk.setPos(pos.x, pos.y, pos.z);
-        hk.prevX = pos.x; hk.prevY = pos.y; hk.prevZ = pos.z;
+        hk.setYRot(Mth.wrapDegrees(lookYaw));
+        hk.setXRot(0f);
+        hk.setYBodyRot(hk.getYRot());
+        hk.setYHeadRot(hk.getYRot());
 
-        float y = MathHelper.wrapDegrees(lookYaw);
-
-        hk.prevYaw = y;
-        hk.setYaw(y);
-        hk.setPitch(0f);
-
-        hk.setVelocity(Vec3d.ZERO);
-        hk.velocityModified = true;
+        hk.setDeltaMovement(Vec3.ZERO);
         hk.setNoGravity(true);
-        hk.noClip = true;
-
-        hk.bodyYaw = y;
-        hk.headYaw = y;
-        hk.prevBodyYaw = y;
-        hk.prevHeadYaw = y;
+        hk.noPhysics = true;
     }
 
-    // ===== owner / discard =====
-    private boolean isOwnerAlive(ServerWorld sw) {
+    private boolean isOwnerAlive(ServerLevel serverLevel) {
         if (ownerPlayerUuid == null) return false;
 
-        for (NozomiEntity n : sw.getEntitiesByClass(
+        for (NozomiEntity n : serverLevel.getEntitiesOfClass(
                 NozomiEntity.class,
-                this.getBoundingBox().expand(128),
+                this.getBoundingBox().inflate(128.0),
                 e -> e.isAlive()
         )) {
             if (ownerPlayerUuid.equals(n.getOwnerUuid())) return true;
@@ -448,65 +486,76 @@ public class GoGoTrainEntity extends Entity implements GeoEntity {
     }
 
     private void discardAndRelease() {
-        for (Entity p : this.getPassengerList()) p.stopRiding();
+        for (Entity p : this.getPassengers()) {
+            p.stopRiding();
+        }
         this.discard();
     }
 
-    // ===== NBT =====
-    @Override
-    protected void readCustomDataFromNbt(NbtCompound nbt) {
-        if (nbt.containsUuid("OwnerP")) ownerPlayerUuid = nbt.getUuid("OwnerP");
-        if (nbt.containsUuid("Target")) targetUuid = nbt.getUuid("Target");
-        if (nbt.containsUuid("NozomiP")) nozomiPassengerUuid = nbt.getUuid("NozomiP");
-        if (nbt.containsUuid("HikariP")) hikariPassengerUuid = nbt.getUuid("HikariP");
+    private void loadGoGoTrainData(CompoundTag tag) {
+        String owner = tag.getString("OwnerP").orElse("");
+        ownerPlayerUuid = owner.isEmpty() ? null : UUID.fromString(owner);
 
-        lifeTicks = nbt.getInt("Life");
+        String target = tag.getString("Target").orElse("");
+        targetUuid = target.isEmpty() ? null : UUID.fromString(target);
 
-        phaseTicks = nbt.getInt("PhaseT");
-        phaseEndTick = nbt.getInt("PhaseE");
-        isCruisePhase = nbt.getBoolean("Cruise");
+        String nozomi = tag.getString("NozomiP").orElse("");
+        nozomiPassengerUuid = nozomi.isEmpty() ? null : UUID.fromString(nozomi);
 
-        theta = nbt.getFloat("Theta");
-        radius = nbt.getFloat("Radius");
-        omega = nbt.getFloat("Omega");
-        clockwise = nbt.getBoolean("Clockwise");
+        String hikari = tag.getString("HikariP").orElse("");
+        hikariPassengerUuid = hikari.isEmpty() ? null : UUID.fromString(hikari);
 
-        fireCooldown = nbt.getInt("FireCd");
+        lifeTicks = tag.getInt("Life").orElse(0);
+        phaseTicks = tag.getInt("PhaseT").orElse(0);
+        phaseEndTick = tag.getInt("PhaseE").orElse(0);
+        isCruisePhase = tag.getBoolean("Cruise").orElse(true);
+
+        theta = tag.getFloat("Theta").orElse(0f);
+        radius = tag.getFloat("Radius").orElse(9.0f);
+        omega = tag.getFloat("Omega").orElse(0.12f);
+        clockwise = tag.getBoolean("Clockwise").orElse(true);
+
+        fireCooldown = tag.getInt("FireCd").orElse(0);
+    }
+
+    private void saveGoGoTrainData(CompoundTag tag) {
+        if (ownerPlayerUuid != null) tag.putString("OwnerP", ownerPlayerUuid.toString());
+        if (targetUuid != null) tag.putString("Target", targetUuid.toString());
+        if (nozomiPassengerUuid != null) tag.putString("NozomiP", nozomiPassengerUuid.toString());
+        if (hikariPassengerUuid != null) tag.putString("HikariP", hikariPassengerUuid.toString());
+
+        tag.putInt("Life", lifeTicks);
+        tag.putInt("PhaseT", phaseTicks);
+        tag.putInt("PhaseE", phaseEndTick);
+        tag.putBoolean("Cruise", isCruisePhase);
+
+        tag.putFloat("Theta", theta);
+        tag.putFloat("Radius", radius);
+        tag.putFloat("Omega", omega);
+        tag.putBoolean("Clockwise", clockwise);
+
+        tag.putInt("FireCd", fireCooldown);
     }
 
     @Override
-    protected void writeCustomDataToNbt(NbtCompound nbt) {
-        if (ownerPlayerUuid != null) nbt.putUuid("OwnerP", ownerPlayerUuid);
-        if (targetUuid != null) nbt.putUuid("Target", targetUuid);
-        if (nozomiPassengerUuid != null) nbt.putUuid("NozomiP", nozomiPassengerUuid);
-        if (hikariPassengerUuid != null) nbt.putUuid("HikariP", hikariPassengerUuid);
-
-        nbt.putInt("Life", lifeTicks);
-
-        nbt.putInt("PhaseT", phaseTicks);
-        nbt.putInt("PhaseE", phaseEndTick);
-        nbt.putBoolean("Cruise", isCruisePhase);
-
-        nbt.putFloat("Theta", theta);
-        nbt.putFloat("Radius", radius);
-        nbt.putFloat("Omega", omega);
-        nbt.putBoolean("Clockwise", clockwise);
-
-        nbt.putInt("FireCd", fireCooldown);
+    public AnimatableInstanceCache getAnimatableInstanceCache() {
+        return cache;
     }
-
-    // ===== GeckoLib =====
-    @Override
-    public AnimatableInstanceCache getAnimatableInstanceCache() { return cache; }
 
     @Override
     public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
-        controllers.add(new AnimationController<>(this, "controller", 0, state -> {
-            boolean moving = this.getVelocity().horizontalLengthSquared() > 0.0008;
-            state.setAndContinue(moving
-                    ? RawAnimation.begin().thenLoop("animation.go")
-                    : RawAnimation.begin().thenLoop("animation.stop"));
-            return PlayState.CONTINUE;
-        }));
+        controllers.add(new AnimationController<>(
+                "controller",
+                0,
+                state -> {
+                    boolean moving = this.getDeltaMovement().horizontalDistanceSqr() > 0.0008;
+                    state.setAnimation(
+                            moving
+                                    ? RawAnimation.begin().thenLoop("animation.go")
+                                    : RawAnimation.begin().thenLoop("animation.stop")
+                    );
+                    return PlayState.CONTINUE;
+                }
+        ));
     }
 }

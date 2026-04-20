@@ -1,22 +1,22 @@
 package com.licht_meilleur.blue_student.client.block;
 
-import com.licht_meilleur.blue_student.block.CraftChamberBlock;
+import com.geckolib.renderer.GeoBlockRenderer;
+import com.geckolib.renderer.base.GeoRenderState;
 import com.licht_meilleur.blue_student.block.entity.CraftChamberBlockEntity;
-import net.minecraft.client.render.block.entity.BlockEntityRendererFactory;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.RotationAxis;
-import software.bernie.geckolib.renderer.GeoBlockRenderer;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.math.Axis;
+import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
+import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState;
+import net.minecraft.core.Direction;
 
-public class CraftChamberRenderer extends GeoBlockRenderer<CraftChamberBlockEntity> {
+public class CraftChamberRenderer<R extends BlockEntityRenderState & GeoRenderState>
+        extends GeoBlockRenderer<CraftChamberBlockEntity, R> {
 
-    public CraftChamberRenderer(BlockEntityRendererFactory.Context ctx) {
-        super(new CraftChamberModel());
+    public CraftChamberRenderer(BlockEntityRendererProvider.Context ctx) {
+        super(ctx, new CraftChamberModel());
     }
 
-    @Override
-    protected void rotateBlock(Direction facing, MatrixStack poseStack) {
-
+    protected void rotateBlock(Direction facing, PoseStack poseStack) {
         float rotY = switch (facing) {
             case NORTH -> 180f;
             case SOUTH -> 0f;
@@ -25,6 +25,6 @@ public class CraftChamberRenderer extends GeoBlockRenderer<CraftChamberBlockEnti
             default    -> 0f;
         };
 
-        poseStack.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(rotY));
+        poseStack.mulPose(Axis.YP.rotationDegrees(rotY));
     }
 }

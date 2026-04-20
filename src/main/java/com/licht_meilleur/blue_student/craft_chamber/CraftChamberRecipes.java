@@ -1,13 +1,14 @@
 package com.licht_meilleur.blue_student.craft_chamber;
 
 import com.licht_meilleur.blue_student.BlueStudentMod;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 import java.util.List;
 
 public final class CraftChamberRecipes {
-    private CraftChamberRecipes() {}
+    private CraftChamberRecipes() {
+    }
 
     public static final List<CraftChamberRecipe> ALL = List.of(
             new CraftChamberRecipe(

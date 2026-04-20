@@ -1,27 +1,27 @@
 package com.licht_meilleur.blue_student.block.entity;
 
+import com.geckolib.animatable.GeoBlockEntity;
+import com.geckolib.animatable.instance.AnimatableInstanceCache;
+import com.geckolib.animatable.manager.AnimatableManager;
+import com.geckolib.animation.AnimationController;
+import com.geckolib.animation.RawAnimation;
+import com.geckolib.animation.object.PlayState;
+import com.geckolib.util.GeckoLibUtil;
 import com.licht_meilleur.blue_student.BlueStudentMod;
 import com.licht_meilleur.blue_student.inventory.CraftChamberScreenHandler;
-import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.screen.NamedScreenHandlerFactory;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.BlockPos;
-import software.bernie.geckolib.animatable.GeoBlockEntity;
-import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
-import software.bernie.geckolib.core.animation.AnimatableManager;
-import software.bernie.geckolib.core.animation.AnimationController;
-import software.bernie.geckolib.core.animation.RawAnimation;
-import software.bernie.geckolib.core.object.PlayState;
-import software.bernie.geckolib.util.GeckoLibUtil;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.MenuProvider;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
 
-public class CraftChamberBlockEntity extends BlockEntity implements GeoBlockEntity, ExtendedScreenHandlerFactory {
+public class CraftChamberBlockEntity extends BlockEntity implements GeoBlockEntity, MenuProvider {
+
+    private static final RawAnimation HOVER =
+            RawAnimation.begin().thenLoop("animation.model.monolith_hover");
 
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
@@ -29,38 +29,30 @@ public class CraftChamberBlockEntity extends BlockEntity implements GeoBlockEnti
         super(BlueStudentMod.CRAFT_CHAMBER_BE, pos, state);
     }
 
-    // ===== GeckoLib =====
     @Override
     public AnimatableInstanceCache getAnimatableInstanceCache() {
-        return cache;
+        return this.cache;
     }
 
     @Override
     public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
         controllers.add(new AnimationController<>(
-                this, "main", 0,
+                "main",
+                0,
                 state -> {
-                    state.setAnimation(RawAnimation.begin().thenLoop("animation.model.monolith_hover"));
+                    state.setAnimation(HOVER);
                     return PlayState.CONTINUE;
                 }
         ));
     }
 
-    // ===== GUI =====
-
     @Override
-    public Text getDisplayName() {
-        return Text.literal("Craft Chamber");
+    public Component getDisplayName() {
+        return Component.literal("Craft Chamber");
     }
 
     @Override
-    public void writeScreenOpeningData(ServerPlayerEntity player, PacketByteBuf buf) {
-        buf.writeBlockPos(this.pos);
-    }
-
-    @Override
-    public ScreenHandler createMenu(int syncId, PlayerInventory inv, PlayerEntity player) {
-        // サーバー側は本物BEを渡す
-        return new CraftChamberScreenHandler(syncId, inv, this, this.pos);
+    public AbstractContainerMenu createMenu(int syncId, Inventory inv, Player player) {
+        return new CraftChamberScreenHandler(syncId, inv, this, this.worldPosition);
     }
 }

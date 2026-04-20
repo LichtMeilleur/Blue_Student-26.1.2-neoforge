@@ -1,22 +1,34 @@
-
 package com.licht_meilleur.blue_student.client.projectile;
 
 import com.licht_meilleur.blue_student.entity.projectile.StudentBulletEntity;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.entity.EntityRenderer;
-import net.minecraft.client.render.entity.EntityRendererFactory;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.Identifier;
+import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.entity.EntityRenderer;
+import net.minecraft.client.renderer.entity.EntityRendererProvider;
+import net.minecraft.client.renderer.entity.state.EntityRenderState;
+import net.minecraft.client.renderer.state.level.CameraRenderState;
 
-public class BulletRenderer extends EntityRenderer<StudentBulletEntity> {
-    public BulletRenderer(EntityRendererFactory.Context ctx) { super(ctx); }
+public class BulletRenderer extends EntityRenderer<StudentBulletEntity, EntityRenderState> {
 
-    @Override
-    public void render(StudentBulletEntity entity, float yaw, float tickDelta,
-                       MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light) {
-        // 何も描かない
+    public BulletRenderer(EntityRendererProvider.Context ctx) {
+        super(ctx);
     }
 
     @Override
-    public Identifier getTexture(StudentBulletEntity entity) { return null; }
+    public EntityRenderState createRenderState() {
+        return new EntityRenderState();
+    }
+
+    @Override
+    public void extractRenderState(StudentBulletEntity entity, EntityRenderState state, float partialTick) {
+        super.extractRenderState(entity, state, partialTick);
+    }
+
+    @Override
+    public void submit(EntityRenderState state,
+                       PoseStack poseStack,
+                       SubmitNodeCollector submitNodeCollector,
+                       CameraRenderState camera) {
+        // 何も描かない
+    }
 }

@@ -1,29 +1,34 @@
 package com.licht_meilleur.blue_student.loot;
 
 import com.licht_meilleur.blue_student.BlueStudentMod;
-import net.fabricmc.fabric.api.loot.v2.LootTableEvents;
-import net.minecraft.loot.LootPool;
-import net.minecraft.loot.entry.ItemEntry;
-import net.minecraft.loot.provider.number.UniformLootNumberProvider;
-import net.minecraft.util.Identifier;
+import net.fabricmc.fabric.api.loot.v3.LootTableEvents;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.storage.loot.LootPool;
+import net.minecraft.world.level.storage.loot.entries.LootItem;
+import net.minecraft.world.level.storage.loot.providers.number.UniformGenerator;
 
-public class ModLoot {
-    // 例：ダンジョン、廃坑、要塞など
-    private static final Identifier DUNGEON = new Identifier("minecraft", "chests/simple_dungeon");
-    private static final Identifier MINESHAFT = new Identifier("minecraft", "chests/abandoned_mineshaft");
-    private static final Identifier STRONGHOLD = new Identifier("minecraft", "chests/stronghold_corridor");
+public final class ModLoot {
+    private ModLoot() {
+    }
+
+    private static final Identifier DUNGEON =
+            Identifier.fromNamespaceAndPath("minecraft", "chests/simple_dungeon");
+    private static final Identifier MINESHAFT =
+            Identifier.fromNamespaceAndPath("minecraft", "chests/abandoned_mineshaft");
+    private static final Identifier STRONGHOLD =
+            Identifier.fromNamespaceAndPath("minecraft", "chests/stronghold_corridor");
 
     public static void init() {
-        LootTableEvents.MODIFY.register((resourceManager, lootManager, id, tableBuilder, source) -> {
-            if (id.equals(DUNGEON) || id.equals(MINESHAFT) || id.equals(STRONGHOLD)) {
+        LootTableEvents.MODIFY.register((key, tableBuilder, source, registries) -> {
+            String id = key.toString();
 
-                LootPool pool = LootPool.builder()
-                        // 何回抽選するか：1回
-                        .rolls(UniformLootNumberProvider.create(0, 1))
-                        // Ticket
-                        .with(ItemEntry.builder(BlueStudentMod.TICKET)
-                                // 重み（出やすさ）
-                                .weight(3))
+            if (id.equals(DUNGEON.toString())
+                    || id.equals(MINESHAFT.toString())
+                    || id.equals(STRONGHOLD.toString())) {
+
+                LootPool pool = LootPool.lootPool()
+                        .setRolls(UniformGenerator.between(0.0f, 1.0f))
+                        .add(LootItem.lootTableItem(BlueStudentMod.TICKET).setWeight(3))
                         .build();
 
                 tableBuilder.pool(pool);

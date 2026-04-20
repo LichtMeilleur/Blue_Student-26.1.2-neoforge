@@ -1,33 +1,27 @@
 package com.licht_meilleur.blue_student.client.others.go_go_train;
 
+import com.geckolib.renderer.GeoEntityRenderer;
+import com.geckolib.renderer.base.GeoRenderState;
 import com.licht_meilleur.blue_student.entity.go_go_train.GoGoTrainEntity;
-import net.minecraft.client.render.entity.EntityRendererFactory;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.RotationAxis;
-import software.bernie.geckolib.renderer.GeoEntityRenderer;
+import net.minecraft.client.renderer.entity.EntityRendererProvider;
+import net.minecraft.client.renderer.entity.state.EntityRenderState;
+import net.minecraft.util.Mth;
 
-public class GoGoTrainRenderer extends GeoEntityRenderer<GoGoTrainEntity> {
+public class GoGoTrainRenderer<R extends EntityRenderState & GeoRenderState>
+        extends GeoEntityRenderer<GoGoTrainEntity, R> {
 
-    public GoGoTrainRenderer(EntityRendererFactory.Context ctx) {
+    public GoGoTrainRenderer(EntityRendererProvider.Context ctx) {
         super(ctx, new GoGoTrainModel());
-        this.shadowRadius = 0f;
+        this.shadowRadius = 0.0f;
     }
 
-    @Override
-    protected void applyRotations(GoGoTrainEntity entity,
-                                  MatrixStack matrices,
-                                  float ageInTicks, float rotationYaw, float partialTick) {
-        // ★superは呼ばない（デフォルト回転が不明なので自前で確定）
-        // super.applyRotations(entity, matrices, ageInTicks, rotationYaw, partialTick);
-
-        // ★補間Yaw（クライアントが持ってる yaw/prevYaw を使う）
-        float y = MathHelper.lerp(partialTick, entity.prevYaw, entity.getYaw());
-
-        // ★モデル正面がズレるならここだけ定数で調整（0/90/180/-90を試す）
-        float modelOffset = 0f;
-
-        // Minecraft標準の向きに合わせて回す
-        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180.0f - y + modelOffset));
+    /**
+     * 旧 applyRotations 用の計算式を保管
+     * 後で submit(...) の PoseStack 回転へ戻す
+     */
+    @SuppressWarnings("unused")
+    private static float legacyModelYaw(float partialTick, float prevYaw, float yaw, float modelOffset) {
+        float y = Mth.lerp(partialTick, prevYaw, yaw);
+        return 180.0f - y + modelOffset;
     }
 }

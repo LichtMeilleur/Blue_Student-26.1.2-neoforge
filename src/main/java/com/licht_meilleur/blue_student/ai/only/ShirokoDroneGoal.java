@@ -2,14 +2,13 @@ package com.licht_meilleur.blue_student.ai.only;
 
 import com.licht_meilleur.blue_student.entity.ShirokoDroneEntity;
 import com.licht_meilleur.blue_student.entity.ShirokoEntity;
-import net.minecraft.entity.ai.goal.Goal;
-import net.minecraft.entity.mob.HostileEntity;
-import net.minecraft.server.world.ServerWorld;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.entity.monster.Monster;
 
 public class ShirokoDroneGoal extends Goal {
 
     private final ShirokoEntity shiroko;
-
 
     private static final int CHECK_INTERVAL = 20;
     private static final double RANGE = 18.0;
@@ -21,27 +20,25 @@ public class ShirokoDroneGoal extends Goal {
         this.shiroko = shiroko;
     }
 
-
     @Override
-    public boolean canStart() {
-        return !shiroko.getWorld().isClient && !shiroko.isLifeLockedForGoal();
+    public boolean canUse() {
+        return !shiroko.level().isClientSide() && !shiroko.isLifeLockedForGoal();
     }
 
     @Override
-    public boolean shouldContinue() {
-        return canStart();
+    public boolean canContinueToUse() {
+        return canUse();
     }
 
     @Override
     public void tick() {
-        if (!(shiroko.getWorld() instanceof ServerWorld sw)) return;
+        if (!(shiroko.level() instanceof ServerLevel serverLevel)) return;
         if (--next > 0) return;
         next = CHECK_INTERVAL;
 
-        // 近くに敵がいる時だけ召喚維持
-        boolean hasEnemy = !sw.getEntitiesByClass(
-                HostileEntity.class,
-                shiroko.getBoundingBox().expand(RANGE),
+        boolean hasEnemy = !serverLevel.getEntitiesOfClass(
+                Monster.class,
+                shiroko.getBoundingBox().inflate(RANGE),
                 e -> e.isAlive()
         ).isEmpty();
 
@@ -53,17 +50,14 @@ public class ShirokoDroneGoal extends Goal {
             return;
         }
 
-        // drone が死んだ/未生成なら生成
         if (drone == null || !drone.isAlive()) {
-            drone = new ShirokoDroneEntity(sw)
-                    .setOwnerUuid(shiroko.getUuid());
+            drone = new ShirokoDroneEntity(serverLevel)
+                    .setOwnerUuid(shiroko.getUUID());
 
-            drone.setPosition(shiroko.getX(), shiroko.getEyeY(), shiroko.getZ());
-            sw.spawnEntity(drone);
+            drone.setPos(shiroko.getX(), shiroko.getEyeY(), shiroko.getZ());
+            serverLevel.addFreshEntity(drone);
 
-            // ★設置アニメ
-            shiroko.requestDroneStart(); // ★シロコ本体に drone_start を再生させる
-
+            shiroko.requestDroneStart();
         }
     }
 }

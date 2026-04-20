@@ -5,13 +5,13 @@ import com.licht_meilleur.blue_student.entity.NozomiEntity;
 import com.licht_meilleur.blue_student.entity.go_go_train.GoGoGunTrainEntity;
 import com.licht_meilleur.blue_student.entity.go_go_train.GoGoTrainEntity;
 import com.licht_meilleur.blue_student.registry.ModEntities;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.ai.goal.Goal;
-import net.minecraft.entity.mob.HostileEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.EnumSet;
 import java.util.UUID;
@@ -29,98 +29,80 @@ public class NozomiHikariMergeGoGoTrainGoal extends Goal {
     private GoGoTrainEntity gogo;
     private GoGoGunTrainEntity gogoGun;
 
-
     public NozomiHikariMergeGoGoTrainGoal(NozomiEntity nozomi) {
         this.nozomi = nozomi;
-        this.setControls(EnumSet.noneOf(Control.class));
+        this.setFlags(EnumSet.noneOf(Flag.class));
     }
 
     @Override
-    public boolean canStart() {
-        if (!(nozomi.getWorld() instanceof ServerWorld sw)) return false;
+    public boolean canUse() {
+        if (!(nozomi.level() instanceof ServerLevel serverLevel)) return false;
         if (nozomi.isLifeLockedForGoal()) return false;
         if (!nozomi.canUseUnisonSkill()) return false;
+
         UUID owner = nozomi.getOwnerUuid();
         if (owner == null) return false;
 
-        // 相方（同オーナー）が近くにいる
-        HikariEntity hikari = findHikari(sw, owner);
+        HikariEntity hikari = findHikari(serverLevel, owner);
         if (hikari == null || !hikari.isAlive()) return false;
 
-        // ★敵がいる時だけ発動（敵なし発動を止める）
-        LivingEntity target = findNearestHostile(sw, nozomi.getPos(), RANGE);
-
+        LivingEntity target = findNearestHostile(serverLevel, nozomi.position(), RANGE);
         return target != null;
     }
 
     @Override
-    public boolean shouldContinue() {
-        if (!(nozomi.getWorld() instanceof ServerWorld sw)) return false;
+    public boolean canContinueToUse() {
+        if (!(nozomi.level() instanceof ServerLevel serverLevel)) return false;
         if (nozomi.isLifeLockedForGoal()) return false;
 
         UUID owner = nozomi.getOwnerUuid();
         if (owner == null) return false;
 
-        // 相方が居なければ終了
-        HikariEntity hikari = findHikari(sw, owner);
+        HikariEntity hikari = findHikari(serverLevel, owner);
         if (hikari == null || !hikari.isAlive()) return false;
 
-        // ★敵がいないなら解除（維持したいならここを true に変える）
-        LivingEntity target = findNearestHostile(sw, nozomi.getPos(), RANGE);
+        LivingEntity target = findNearestHostile(serverLevel, nozomi.position(), RANGE);
         if (target == null) return false;
 
         nozomi.startUnisonCooldown();
-        // gogoが生きてるなら続行
         return gogo != null && gogo.isAlive();
-
     }
 
     @Override
     public void stop() {
-        if (!(nozomi.getWorld() instanceof ServerWorld sw)) return;
+        if (!(nozomi.level() instanceof ServerLevel serverLevel)) return;
 
         UUID owner = nozomi.getOwnerUuid();
-        HikariEntity hikari = (owner != null) ? findHikari(sw, owner) : null;
+        HikariEntity hikari = (owner != null) ? findHikari(serverLevel, owner) : null;
 
-        // フラグOFF
         nozomi.setTrainSkillActive(false);
         if (hikari != null) hikari.setGunTrainSkillActive(false);
 
-        // 生成物破棄
         discardMergedEntitiesIfAny();
 
-        // 騎乗解除（ノゾミのみ）
-        if (nozomi.hasVehicle()) nozomi.stopRiding();
+        if (nozomi.getVehicle() != null) nozomi.stopRiding();
 
-        // 間引きカウンタも戻す
         next = 0;
-
     }
 
     @Override
     public void tick() {
-        if (!(nozomi.getWorld() instanceof ServerWorld sw)) return;
+        if (!(nozomi.level() instanceof ServerLevel serverLevel)) return;
 
-
-
-        // ★間引き（安定化）
         if (--next > 0) return;
         next = CHECK_INTERVAL;
 
         UUID ownerP = nozomi.getOwnerUuid();
         if (ownerP == null) return;
 
-        // 0) 相方確認
-        HikariEntity hikari = findHikari(sw, ownerP);
+        HikariEntity hikari = findHikari(serverLevel, ownerP);
         if (hikari == null || !hikari.isAlive()) {
-            // 解除
             nozomi.setTrainSkillActive(false);
             discardMergedEntitiesIfAny();
             return;
         }
 
-        // 1) 敵確認（敵なしなら解除）
-        LivingEntity target = findNearestHostile(sw, nozomi.getPos(), RANGE);
+        LivingEntity target = findNearestHostile(serverLevel, nozomi.position(), RANGE);
         if (target == null) {
             hikari.setGunTrainSkillActive(false);
             nozomi.setTrainSkillActive(false);
@@ -128,116 +110,105 @@ public class NozomiHikariMergeGoGoTrainGoal extends Goal {
             return;
         }
 
-        // 敵がいる → 合体中フラグON（アニメ用）
         hikari.setGunTrainSkillActive(true);
         nozomi.setTrainSkillActive(true);
 
-        // 2) GoGoTrain 確保
         if (gogo == null || !gogo.isAlive()) {
-            gogo = findGoGoTrain(sw, ownerP);
+            gogo = findGoGoTrain(serverLevel, ownerP);
         }
         if (gogo == null) {
-            Vec3d spawn = computeTrainSpawnPos(nozomi);
+            Vec3 spawn = computeTrainSpawnPos(nozomi);
 
-            gogo = new GoGoTrainEntity(ModEntities.GO_GO_TRAIN, sw)
+            gogo = new GoGoTrainEntity(ModEntities.GO_GO_TRAIN, serverLevel)
                     .setOwnerPlayerUuid(ownerP)
-                    .setNozomiPassengerUuid(nozomi.getUuid())
-                    .setHikariPassengerUuid(hikari.getUuid())
+                    .setNozomiPassengerUuid(nozomi.getUUID())
+                    .setHikariPassengerUuid(hikari.getUUID())
                     .setClockwise(true);
 
-            gogo.refreshPositionAndAngles(spawn.x, spawn.y, spawn.z, nozomi.getYaw(), 0.0f);
-            sw.spawnEntity(gogo);
+            gogo.setPos(spawn.x, spawn.y, spawn.z);
+            gogo.setYRot(nozomi.getYRot());
+            gogo.setXRot(0.0f);
+            serverLevel.addFreshEntity(gogo);
         }
 
-        // 3) GoGoGunTrain 確保（後方車両）
         if (gogoGun == null || !gogoGun.isAlive()) {
-            gogoGun = findGoGoGunTrain(sw, ownerP);
+            gogoGun = findGoGoGunTrain(serverLevel, ownerP);
         }
         if (gogoGun == null) {
-            Vec3d gunSpawn = computeGunSpawnBehindTrain(gogo);
+            Vec3 gunSpawn = computeGunSpawnBehindTrain(gogo);
 
-            gogoGun = new GoGoGunTrainEntity(ModEntities.GO_GO_GUN_TRAIN, sw)
+            gogoGun = new GoGoGunTrainEntity(ModEntities.GO_GO_GUN_TRAIN, serverLevel)
                     .setOwnerPlayerUuid(ownerP)
-                    .setTrainUuid(gogo.getUuid())
-                    .setPassengerStudentUuid(hikari.getUuid())
+                    .setTrainUuid(gogo.getUUID())
+                    .setPassengerStudentUuid(hikari.getUUID())
                     .setMergedMode(true);
 
-            float yaw = gogo.getYaw(); // 必要なら +90/-90
-            gogoGun.refreshPositionAndAngles(gunSpawn.x, gunSpawn.y, gunSpawn.z, yaw, 0.0f);
-            sw.spawnEntity(gogoGun);
+            float yaw = gogo.getYRot();
+            gogoGun.setPos(gunSpawn.x, gunSpawn.y, gunSpawn.z);
+            gogoGun.setYRot(yaw);
+            gogoGun.setXRot(0.0f);
+            serverLevel.addFreshEntity(gogoGun);
         }
 
-        // 4) ターゲット同期
-        gogo.setTargetUuid(target.getUuid());
+        gogo.setTargetUuid(target.getUUID());
 
-
-
-        // 5) 後方車両を先頭に追従（遅れ軽減）
         followGunToTrain(gogo, gogoGun);
 
-        // 6) ノゾミは先頭に騎乗
         if (nozomi.getVehicle() != gogo) {
             nozomi.stopRiding();
-            nozomi.startRiding(gogo, true);
+            nozomi.startRiding(gogo);
         }
 
-        // 7) ヒカリは後方車両に騎乗
         if (hikari.getVehicle() != gogoGun) {
             hikari.stopRiding();
-            hikari.startRiding(gogoGun, true);
+            hikari.startRiding(gogoGun);
         }
-
     }
 
-    /* -------------------------
-       補助関数
-       ------------------------- */
-
-
-
-    private Vec3d computeTrainSpawnPos(NozomiEntity noz) {
-        return noz.getPos().add(0, 0.2, 0);
+    private Vec3 computeTrainSpawnPos(NozomiEntity noz) {
+        return noz.position().add(0, 0.2, 0);
     }
 
-    private Vec3d computeGunSpawnBehindTrain(GoGoTrainEntity train) {
-        float yaw = train.getYaw();
-        Vec3d forward = forwardFromYaw(yaw).normalize();
-        Vec3d base = train.getPos();
+    private Vec3 computeGunSpawnBehindTrain(GoGoTrainEntity train) {
+        float yaw = train.getYRot();
+        Vec3 forward = forwardFromYaw(yaw).normalize();
+        Vec3 base = train.position();
 
-        double back = 2.2; // 調整
-        return base.add(forward.multiply(-back));
+        double back = 2.2;
+        return base.add(forward.scale(-back));
     }
 
     private void followGunToTrain(GoGoTrainEntity train, GoGoGunTrainEntity gun) {
         if (train == null || gun == null) return;
         if (!train.isAlive() || !gun.isAlive()) return;
 
-        float yaw = train.getYaw();
-        Vec3d forward = forwardFromYaw(yaw).normalize();
-        Vec3d base = train.getPos();
+        float yaw = train.getYRot();
+        Vec3 forward = forwardFromYaw(yaw).normalize();
+        Vec3 base = train.position();
 
-        double back = 2.2;   // 調整
-        double right = 0.0;  // 調整
-        double up = 0.0;     // 調整
+        double back = 2.2;
+        double right = 0.0;
+        double up = 0.0;
 
-        Vec3d rightV = forward.crossProduct(new Vec3d(0, 1, 0)).normalize();
-        Vec3d pos = base.add(0, up, 0)
-                .add(forward.multiply(-back))
-                .add(rightV.multiply(right));
+        Vec3 rightV = forward.cross(new Vec3(0, 1, 0)).normalize();
+        Vec3 pos = base.add(0, up, 0)
+                .add(forward.scale(-back))
+                .add(rightV.scale(right));
 
-        gun.refreshPositionAndAngles(pos.x, pos.y, pos.z, yaw, 0.0f);
-        gun.setVelocity(Vec3d.ZERO);
-        gun.velocityModified = true;
+        gun.setPos(pos.x, pos.y, pos.z);
+        gun.setYRot(yaw);
+        gun.setXRot(0.0f);
+        gun.setDeltaMovement(Vec3.ZERO);
     }
 
-    private LivingEntity findNearestHostile(ServerWorld sw, Vec3d center, double range) {
-        Box box = new Box(center, center).expand(range, 6.0, range);
+    private LivingEntity findNearestHostile(ServerLevel serverLevel, Vec3 center, double range) {
+        AABB box = new AABB(center, center).inflate(range, 6.0, range);
 
-        HostileEntity best = null;
+        Monster best = null;
         double bestD2 = Double.MAX_VALUE;
 
-        for (HostileEntity e : sw.getEntitiesByClass(HostileEntity.class, box, LivingEntity::isAlive)) {
-            double d2 = e.squaredDistanceTo(center);
+        for (Monster e : serverLevel.getEntitiesOfClass(Monster.class, box, LivingEntity::isAlive)) {
+            double d2 = e.distanceToSqr(center);
             if (d2 < bestD2) {
                 bestD2 = d2;
                 best = e;
@@ -246,32 +217,32 @@ public class NozomiHikariMergeGoGoTrainGoal extends Goal {
         return best;
     }
 
-    private static Vec3d forwardFromYaw(float yawDeg) {
-        float r = yawDeg * MathHelper.RADIANS_PER_DEGREE;
-        return new Vec3d(-MathHelper.sin(r), 0, MathHelper.cos(r));
+    private static Vec3 forwardFromYaw(float yawDeg) {
+        float r = yawDeg * Mth.DEG_TO_RAD;
+        return new Vec3(-Mth.sin(r), 0, Mth.cos(r));
     }
 
-    private HikariEntity findHikari(ServerWorld sw, UUID ownerP) {
-        Box box = nozomi.getBoundingBox().expand(FIND_RANGE);
-        for (HikariEntity h : sw.getEntitiesByClass(HikariEntity.class, box, e -> e.isAlive())) {
+    private HikariEntity findHikari(ServerLevel serverLevel, UUID ownerP) {
+        AABB box = nozomi.getBoundingBox().inflate(FIND_RANGE);
+        for (HikariEntity h : serverLevel.getEntitiesOfClass(HikariEntity.class, box, e -> e.isAlive())) {
             UUID ho = h.getOwnerUuid();
             if (ho != null && ho.equals(ownerP)) return h;
         }
         return null;
     }
 
-    private GoGoTrainEntity findGoGoTrain(ServerWorld sw, UUID ownerP) {
-        Box box = nozomi.getBoundingBox().expand(FIND_RANGE);
-        for (GoGoTrainEntity e : sw.getEntitiesByClass(GoGoTrainEntity.class, box, x -> x.isAlive())) {
+    private GoGoTrainEntity findGoGoTrain(ServerLevel serverLevel, UUID ownerP) {
+        AABB box = nozomi.getBoundingBox().inflate(FIND_RANGE);
+        for (GoGoTrainEntity e : serverLevel.getEntitiesOfClass(GoGoTrainEntity.class, box, x -> x.isAlive())) {
             UUID o = e.getOwnerPlayerUuid();
             if (o != null && o.equals(ownerP)) return e;
         }
         return null;
     }
 
-    private GoGoGunTrainEntity findGoGoGunTrain(ServerWorld sw, UUID ownerP) {
-        Box box = nozomi.getBoundingBox().expand(FIND_RANGE);
-        for (GoGoGunTrainEntity e : sw.getEntitiesByClass(GoGoGunTrainEntity.class, box, x -> x.isAlive())) {
+    private GoGoGunTrainEntity findGoGoGunTrain(ServerLevel serverLevel, UUID ownerP) {
+        AABB box = nozomi.getBoundingBox().inflate(FIND_RANGE);
+        for (GoGoGunTrainEntity e : serverLevel.getEntitiesOfClass(GoGoGunTrainEntity.class, box, x -> x.isAlive())) {
             UUID o = e.getOwnerPlayerUuid();
             if (o != null && o.equals(ownerP)) return e;
         }

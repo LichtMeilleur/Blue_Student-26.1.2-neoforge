@@ -3,50 +3,45 @@ package com.licht_meilleur.blue_student.ai;
 import com.licht_meilleur.blue_student.entity.AbstractStudentEntity;
 import com.licht_meilleur.blue_student.student.IStudentEntity;
 import com.licht_meilleur.blue_student.student.StudentAiMode;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.ai.goal.Goal;
-import net.minecraft.entity.mob.HostileEntity;
-import net.minecraft.entity.mob.PathAwareEntity;
-import net.minecraft.item.FoodComponent;
-import net.minecraft.item.ItemStack;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.Box;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.PathfinderMob;
+import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.food.FoodProperties;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.AABB;
 
 import java.util.EnumSet;
 
 public class StudentEatGoal extends Goal {
 
-    private final PathAwareEntity mob;
+    private final PathfinderMob mob;
     private final IStudentEntity student;
 
-    // ===== 調整パラメータ =====
-    private final float triggerHpRatio;      // 例 0.85f
-    private final double hostileRadius;      // 例 10.0
-    private final int eatDurationTicks;      // 例 16
-    private final int eatCooldownTicks;      // 例 40
-    private final int healAmount;            // 例 6（固定回復）
+    private final float triggerHpRatio;
+    private final double hostileRadius;
+    private final int eatDurationTicks;
+    private final int eatCooldownTicks;
+    private final int healAmount;
 
-    // ===== 状態 =====
     private int eatTicksLeft = 0;
     private int cooldown = 0;
     private int eatingSlot = -1;
 
-    public StudentEatGoal(PathAwareEntity mob, IStudentEntity student) {
-        this(mob, student,
-                0.85f,
-                10.0,
-                16,
-                40,
-                6
-        );
+    public StudentEatGoal(PathfinderMob mob, IStudentEntity student) {
+        this(mob, student, 0.85f, 10.0, 16, 40, 6);
     }
 
-    public StudentEatGoal(PathAwareEntity mob, IStudentEntity student,
-                          float triggerHpRatio,
-                          double hostileRadius,
-                          int eatDurationTicks,
-                          int eatCooldownTicks,
-                          int healAmount) {
+    public StudentEatGoal(
+            PathfinderMob mob,
+            IStudentEntity student,
+            float triggerHpRatio,
+            double hostileRadius,
+            int eatDurationTicks,
+            int eatCooldownTicks,
+            int healAmount
+    ) {
         this.mob = mob;
         this.student = student;
         this.triggerHpRatio = triggerHpRatio;
@@ -55,17 +50,15 @@ public class StudentEatGoal extends Goal {
         this.eatCooldownTicks = eatCooldownTicks;
         this.healAmount = healAmount;
 
-        // 食べてる間は MOVE/LOOK を握って止める
-        this.setControls(EnumSet.of(Control.MOVE));
+        this.setFlags(EnumSet.of(Flag.MOVE));
     }
 
     @Override
-    public boolean canStart() {
-        if (!(mob.getWorld() instanceof ServerWorld)) return false;
+    public boolean canUse() {
+        if (!(mob.level() instanceof net.minecraft.server.level.ServerLevel)) return false;
 
-        // 復活フェーズ等なら食べない（Entity側のstateがある前提）
         if (mob instanceof AbstractStudentEntity se) {
-            if (se.isLifeLockedForGoal()) return false; // ★後述の小API
+            if (se.isLifeLockedForGoal()) return false;
         }
 
         StudentAiMode mode = student.getAiMode();
@@ -73,62 +66,48 @@ public class StudentEatGoal extends Goal {
 
         if (cooldown > 0) return false;
 
-        // HPが十分なら不要
         float max = mob.getMaxHealth();
         if (max <= 0.01f) return false;
         float ratio = mob.getHealth() / max;
         if (ratio >= triggerHpRatio) return false;
 
-        // 近くに敵がいるなら食べない（戦闘/回避を優先）
         if (hasHostileNearby()) return false;
 
-        // 食べ物がある？
         eatingSlot = findFoodSlot();
         return eatingSlot >= 0;
     }
 
     @Override
-    public boolean shouldContinue() {
+    public boolean canContinueToUse() {
         if (eatTicksLeft <= 0) return false;
-        if (!(mob.getWorld() instanceof ServerWorld)) return false;
-
-        // 食べてる途中に敵が来たら中断
+        if (!(mob.level() instanceof net.minecraft.server.level.ServerLevel)) return false;
         if (hasHostileNearby()) return false;
-
-        // スロットが空になったら中断
         if (eatingSlot < 0) return false;
 
         ItemStack st = getInvStack(eatingSlot);
-        return !st.isEmpty() && st.isFood();
+        return !st.isEmpty() && st.has(DataComponents.FOOD);
     }
 
     @Override
     public void start() {
         mob.getNavigation().stop();
-        mob.setVelocity(0, mob.getVelocity().y, 0);
-        mob.velocityDirty = true;
+        mob.setDeltaMovement(0, mob.getDeltaMovement().y, 0);
 
         eatTicksLeft = eatDurationTicks;
 
-        // 見た目用：ACTIONトリガー & 右手表示
         if (mob instanceof AbstractStudentEntity se) {
-            se.requestEatFromGoal();               // ★後述の小API（requestEatを外に出す）
-            se.startEatingVisualFromGoal(eatingSlot, eatDurationTicks); // ★後述
+            se.requestEatFromGoal();
+            se.startEatingVisualFromGoal(eatingSlot, eatDurationTicks);
         }
     }
 
     @Override
     public void tick() {
-        // その場で停止
         mob.getNavigation().stop();
-        mob.setVelocity(0, mob.getVelocity().y, 0);
-        mob.velocityDirty = true;
-
-        // なんとなくオーナー方向を見る等したいならここで lookAt してもOK
+        mob.setDeltaMovement(0, mob.getDeltaMovement().y, 0);
 
         eatTicksLeft--;
 
-        // 食べ終わりタイミングで効果適用（最後のtickで1回）
         if (eatTicksLeft == 0) {
             consumeAndHeal();
             cooldown = eatCooldownTicks;
@@ -142,25 +121,21 @@ public class StudentEatGoal extends Goal {
         eatingSlot = -1;
     }
 
-    // ====== 毎tick呼ばれるから軽量に ======
     private boolean hasHostileNearby() {
-        Box box = mob.getBoundingBox().expand(hostileRadius);
-        // HostileEntityが1体でもいれば戦闘中扱い
-        return !mob.getWorld().getEntitiesByClass(HostileEntity.class, box, LivingEntity::isAlive).isEmpty();
+        AABB box = mob.getBoundingBox().inflate(hostileRadius);
+        return !mob.level().getEntitiesOfClass(Monster.class, box, LivingEntity::isAlive).isEmpty();
     }
 
     private int findFoodSlot() {
         if (!(mob instanceof AbstractStudentEntity se)) return -1;
 
-        for (int i = 0; i < se.getStudentInventory().size(); i++) {
-            ItemStack st = se.getStudentInventory().getStack(i);
+        for (int i = 0; i < se.getStudentInventory().getContainerSize(); i++) {
+            ItemStack st = se.getStudentInventory().getItem(i);
             if (st.isEmpty()) continue;
-            if (!st.isFood()) continue;
-
-            // ブラックリスト（Entity側の関数を使ってもOK）
+            if (!st.has(DataComponents.FOOD)) continue;
             if (se.isBadFoodItemForGoal(st)) continue;
 
-            FoodComponent food = st.getItem().getFoodComponent();
+            FoodProperties food = st.get(DataComponents.FOOD);
             if (food == null) continue;
 
             return i;
@@ -170,28 +145,24 @@ public class StudentEatGoal extends Goal {
 
     private ItemStack getInvStack(int slot) {
         if (!(mob instanceof AbstractStudentEntity se)) return ItemStack.EMPTY;
-        if (slot < 0 || slot >= se.getStudentInventory().size()) return ItemStack.EMPTY;
-        return se.getStudentInventory().getStack(slot);
+        if (slot < 0 || slot >= se.getStudentInventory().getContainerSize()) return ItemStack.EMPTY;
+        return se.getStudentInventory().getItem(slot);
     }
 
     private void consumeAndHeal() {
         if (!(mob instanceof AbstractStudentEntity se)) return;
+        if (eatingSlot < 0 || eatingSlot >= se.getStudentInventory().getContainerSize()) return;
 
-        if (eatingSlot < 0 || eatingSlot >= se.getStudentInventory().size()) return;
-
-        ItemStack st = se.getStudentInventory().getStack(eatingSlot);
-        if (st.isEmpty() || !st.isFood()) return;
+        ItemStack st = se.getStudentInventory().getItem(eatingSlot);
+        if (st.isEmpty()) return;
+        if (!st.has(DataComponents.FOOD)) return;
         if (se.isBadFoodItemForGoal(st)) return;
 
-        // 回復（固定）
         se.heal(healAmount);
-
-        // 消費
-        st.decrement(1);
-        se.getStudentInventory().markDirty();
+        st.shrink(1);
+        se.getStudentInventory().setChanged();
     }
 
-    // ===== 外部から毎tick減らすために GoalSelector 依存でtickされる =====
     public void tickCooldown() {
         if (cooldown > 0) cooldown--;
     }

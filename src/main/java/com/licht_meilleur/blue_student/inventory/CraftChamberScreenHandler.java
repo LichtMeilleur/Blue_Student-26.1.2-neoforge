@@ -20,7 +20,7 @@ public class CraftChamberScreenHandler extends AbstractContainerMenu {
     }
 
     public BlockPos getPos() {
-        return pos;
+        return this.pos;
     }
 
     public CraftChamberBlockEntity getBlockEntity() {

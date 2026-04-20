@@ -103,29 +103,38 @@ public class StudentScreenHandler extends AbstractContainerMenu {
         ItemStack original = slot.getItem();
         ItemStack newStack = original.copy();
 
-        int equipStart = 0;
-        int equipEnd = 1;
-        int studentStart = 1;
-        int studentEnd = 10;
-        int playerStart = 10;
-        int playerEnd = this.slots.size();
+        final int studentStart = 0;
+        final int studentEnd = 9;
 
-        if (index < playerStart) {
+        final boolean hasEquip = this.equipSlotScreenIndex >= 0;
+        final int equipStart = hasEquip ? this.equipSlotScreenIndex : -1;
+        final int equipEnd = hasEquip ? this.equipSlotScreenIndex + 1 : -1;
+
+        final int playerStart = hasEquip ? 10 : 9;
+        final int playerEnd = this.slots.size();
+
+        if (index >= studentStart && index < studentEnd) {
+            if (!this.moveItemStackTo(original, playerStart, playerEnd, true)) {
+                return ItemStack.EMPTY;
+            }
+        } else if (hasEquip && index >= equipStart && index < equipEnd) {
             if (!this.moveItemStackTo(original, playerStart, playerEnd, true)) {
                 return ItemStack.EMPTY;
             }
         } else {
             IStudentEntity se = resolveEntity(player);
-            boolean isEquip = (se != null) && StudentEquipments.isBrEquipped(se.getStudentId(), original);
+            boolean moved = false;
 
-            if (isEquip) {
-                if (!this.moveItemStackTo(original, equipStart, equipEnd, false)) {
-                    return ItemStack.EMPTY;
-                }
-            } else {
-                if (!this.moveItemStackTo(original, studentStart, studentEnd, false)) {
-                    return ItemStack.EMPTY;
-                }
+            if (hasEquip && se != null && StudentEquipments.isBrEquipped(se.getStudentId(), original)) {
+                moved = this.moveItemStackTo(original, equipStart, equipEnd, false);
+            }
+
+            if (!moved) {
+                moved = this.moveItemStackTo(original, studentStart, studentEnd, false);
+            }
+
+            if (!moved) {
+                return ItemStack.EMPTY;
             }
         }
 

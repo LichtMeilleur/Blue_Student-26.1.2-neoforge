@@ -1,66 +1,76 @@
 package com.licht_meilleur.blue_student.entity;
 
-import com.licht_meilleur.blue_student.ai.br_ai.*;
-import com.licht_meilleur.blue_student.ai.*;
+import com.licht_meilleur.blue_student.ai.StudentAimGoal;
+import com.licht_meilleur.blue_student.ai.StudentCombatGoal;
+import com.licht_meilleur.blue_student.ai.StudentEatGoal;
+import com.licht_meilleur.blue_student.ai.StudentEvadeGoal;
+import com.licht_meilleur.blue_student.ai.StudentFollowGoal;
+import com.licht_meilleur.blue_student.ai.StudentRideWithOwnerGoal;
+import com.licht_meilleur.blue_student.ai.StudentSecurityGoal;
+import com.licht_meilleur.blue_student.ai.StudentStuckEscapeGoal;
+import com.licht_meilleur.blue_student.ai.br_ai.HoshinoBrCombatGoal;
+import com.licht_meilleur.blue_student.ai.br_ai.HoshinoBrEvadeGoal;
 import com.licht_meilleur.blue_student.ai.only.HoshinoGuardGoal;
 import com.licht_meilleur.blue_student.bed.BedLinkManager;
 import com.licht_meilleur.blue_student.student.StudentAiMode;
 import com.licht_meilleur.blue_student.student.StudentBrAction;
+import com.licht_meilleur.blue_student.student.StudentForm;
 import com.licht_meilleur.blue_student.student.StudentId;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.ai.goal.SwimGoal;
-import net.minecraft.entity.data.DataTracker;
-import net.minecraft.entity.data.TrackedData;
-import net.minecraft.entity.data.TrackedDataHandlerRegistry;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
-import software.bernie.geckolib.core.animation.RawAnimation;
+import com.geckolib.animation.RawAnimation;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.ai.goal.FloatGoal;
+import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
+
+import java.util.UUID;
 
 public class HoshinoEntity extends AbstractStudentEntity {
 
-    private static final TrackedData<StudentAiMode> AI_MODE =
-            DataTracker.registerData(HoshinoEntity.class, StudentAiMode.TRACKED);
-    private static final TrackedData<Boolean> TD_GUARDING =
-            DataTracker.registerData(HoshinoEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
-    private static final TrackedData<Boolean> TD_GUARD_SHOOTING =
-            DataTracker.registerData(HoshinoEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
+    private static final EntityDataAccessor<Integer> AI_MODE =
+            SynchedEntityData.defineId(HoshinoEntity.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Boolean> TD_GUARDING =
+            SynchedEntityData.defineId(HoshinoEntity.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Boolean> TD_GUARD_SHOOTING =
+            SynchedEntityData.defineId(HoshinoEntity.class, EntityDataSerializers.BOOLEAN);
 
     public static final String ANIM_SHOT = "animation.model.shot";
     public static final String ANIM_GUARD_IDLE = "animation.model.guard_idle";
-    public static final String ANIM_GUARD_WALK = "animation.model.guard_walk";//BRverでは使わない
+    public static final String ANIM_GUARD_WALK = "animation.model.guard_walk";
     public static final String ANIM_GUARD_SHOT = "animation.model.guard_shot";
 
-    public static final String ANIM_BR_IDLE = "animation.model.idle"; // 既存idle流用でもOK
-    public static final String ANIM_BR_RUN  = "animation.model.run";  // 既存run流用でもOK
+    public static final String ANIM_BR_IDLE = "animation.model.idle";
+    public static final String ANIM_BR_RUN = "animation.model.run";
 
     private static final RawAnimation BR_IDLE = RawAnimation.begin().thenLoop(ANIM_BR_IDLE);
-    private static final RawAnimation BR_RUN  = RawAnimation.begin().thenLoop(ANIM_BR_RUN);
-    //BRver
-    //バックステップしながらショットガンを撃つ　4tickで射撃
-    public static final String ANIM_DODGE_SHOT = "animation.model.dodge_shot";
-    //盾でタックル　強吹き飛ばし
-    public static final String ANIM_GUARD_TACKLE = "animation.model.guard_tackle";
-    //その場で盾でバッシュ　強吹き飛ばし
-    public static final String ANIM_GUARD_BASH = "animation.model.guard_bash";
-    //リロードしながら撃つアニメ　メインのショットガンのリロードを行いながらサブのハンドガンをうつ　静止
-    public static final String ANIM_SUB_RELOAD_SHOT = "animation.model.sub_reload_shot3";
-    //リロード無しで撃つアニメ　サブのハンドガンの静止して撃つ
-    public static final String ANIM_SUB_SHOT = "animation.model.sub_shot3";
-    //側面にに回りながら撃つアニメ　前進しながら右方向or左方向に撃つイメージ　　2tickで射撃 体の向きは回避方向に向ける必要あり
-    public static final String ANIM_RIGHT_SIDE_SUB_SHOT = "animation.model.right_side_sub_shot";
-    public static final String ANIM_LEFT_SIDE_SUB_SHOT= "animation.model.left_side_sub_shot";
+    private static final RawAnimation BR_RUN = RawAnimation.begin().thenLoop(ANIM_BR_RUN);
 
-    private static final RawAnimation MAIN_SHOT = RawAnimation.begin().thenPlay(ANIM_SHOT); // ここは共通shot名でOK
+    public static final String ANIM_DODGE_SHOT = "animation.model.dodge_shot";
+    public static final String ANIM_GUARD_TACKLE = "animation.model.guard_tackle";
+    public static final String ANIM_GUARD_BASH = "animation.model.guard_bash";
+    public static final String ANIM_SUB_RELOAD_SHOT = "animation.model.sub_reload_shot3";
+    public static final String ANIM_SUB_SHOT = "animation.model.sub_shot3";
+    public static final String ANIM_RIGHT_SIDE_SUB_SHOT = "animation.model.right_side_sub_shot";
+    public static final String ANIM_LEFT_SIDE_SUB_SHOT = "animation.model.left_side_sub_shot";
+
+    private static final RawAnimation MAIN_SHOT = RawAnimation.begin().thenPlay(ANIM_SHOT);
     private static final RawAnimation GUARD_IDLE = RawAnimation.begin().thenLoop(ANIM_GUARD_IDLE);
     private static final RawAnimation GUARD_WALK = RawAnimation.begin().thenLoop(ANIM_GUARD_WALK);
     private static final RawAnimation GUARD_SHOT = RawAnimation.begin().thenPlay(ANIM_GUARD_SHOT);
 
-    //BRver
     private static final RawAnimation DODGE_SHOT = RawAnimation.begin().thenPlay(ANIM_DODGE_SHOT);
     private static final RawAnimation GUARD_TACKLE = RawAnimation.begin().thenPlay(ANIM_GUARD_TACKLE);
     private static final RawAnimation GUARD_BASH = RawAnimation.begin().thenPlay(ANIM_GUARD_BASH);
@@ -69,173 +79,156 @@ public class HoshinoEntity extends AbstractStudentEntity {
     private static final RawAnimation RIGHT_SIDE_SUB_SHOT = RawAnimation.begin().thenPlay(ANIM_RIGHT_SIDE_SUB_SHOT);
     private static final RawAnimation LEFT_SIDE_SUB_SHOT = RawAnimation.begin().thenPlay(ANIM_LEFT_SIDE_SUB_SHOT);
 
-
-    // ===== Guard Skill Params =====
-    private static final int GUARD_DURATION_TICKS = 60;   // 3秒（20t=1秒）
-    private static final int GUARD_COOLDOWN_TICKS = 100;  // 5秒
-    private static final int TAUNT_INTERVAL_TICKS = 10;   // タウント更新間隔
+    private static final int GUARD_DURATION_TICKS = 60;
+    private static final int GUARD_COOLDOWN_TICKS = 100;
+    private static final int TAUNT_INTERVAL_TICKS = 10;
     private static final double TAUNT_RADIUS = 12.0;
 
-    // ===== Guard State =====
     private int guardActiveTicks = 0;
     private int guardCooldownTicks = 0;
 
-    private static final int GUARD_DURATION = 20 * 6;   // 6秒
-    private static final int GUARD_COOLDOWN = 20 * 12;
-
-    private boolean guarding = false;          // “見た目/挙動”用フラグ（実体はguardActiveTicks>0）
-    private boolean guardShooting = false;     // ガード撃ちアニメ用
-
-
-
-    // isGuardShooting() / setGuardShooting() を作る（←質問の答え）
-    public boolean isGuarding() { return this.dataTracker.get(TD_GUARDING); }
-    public boolean isGuardShooting() { return this.dataTracker.get(TD_GUARD_SHOOTING); }
-
-
-    // 移動速度の “元値” をキャッシュ
     private double baseMoveSpeedCached = -1;
 
-
-     // 12秒
-
-
-    public HoshinoEntity(EntityType<? extends AbstractStudentEntity> type, World world) {
-        super(type, world);
+    public HoshinoEntity(EntityType<? extends AbstractStudentEntity> type, Level level) {
+        super(type, level);
     }
-
-
 
     @Override
     protected RawAnimation getBrAnimationForAction(StudentBrAction a) {
         return switch (a) {
-            case MAIN_SHOT           -> MAIN_SHOT;
-            case DODGE_SHOT          -> DODGE_SHOT;
-            case GUARD_TACKLE        -> GUARD_TACKLE;
-            case GUARD_BASH          -> GUARD_BASH;
-
+            case MAIN_SHOT -> MAIN_SHOT;
+            case DODGE_SHOT -> DODGE_SHOT;
+            case GUARD_TACKLE -> GUARD_TACKLE;
+            case GUARD_BASH -> GUARD_BASH;
             case RIGHT_SIDE_SUB_SHOT -> RIGHT_SIDE_SUB_SHOT;
-            case LEFT_SIDE_SUB_SHOT  -> LEFT_SIDE_SUB_SHOT;
+            case LEFT_SIDE_SUB_SHOT -> LEFT_SIDE_SUB_SHOT;
             case SUB_SHOT -> SUB_SHOT;
             case SUB_RELOAD_SHOT -> SUB_RELOAD_SHOT;
-
-            // ★ここが重要
             case IDLE -> BR_IDLE;
-
             default -> null;
         };
     }
 
+    @Override
+    public StudentId getStudentId() {
+        return StudentId.HOSHINO;
+    }
+
+
 
     @Override
-    public StudentId getStudentId() { return StudentId.HOSHINO; }
+    protected EntityDataAccessor<Integer> getAiModeTrackedData() {
+        return AI_MODE;
+    }
 
-    @Override
-    protected TrackedData<StudentAiMode> getAiModeTrackedData() { return AI_MODE; }
+    public boolean isGuarding() {
+        return this.entityData.get(TD_GUARDING);
+    }
 
-    @Override
-    public ActionResult interactMob(PlayerEntity player, Hand hand) {
-        if (this.getWorld().isClient) return ActionResult.SUCCESS;
-
-        if (ownerUuid == null) setOwnerUuid(player.getUuid());
-        if (!player.getUuid().equals(ownerUuid)) return ActionResult.PASS;
-
-        var inHand = player.getStackInHand(hand);
-        if (player.isSneaking() && inHand.isEmpty()) {
-            BedLinkManager.setLinking(player.getUuid(), StudentId.HOSHINO);
-            player.sendMessage(net.minecraft.text.Text.translatable("msg.blue_student.link_mode", "hoshino"), false);
-            return ActionResult.CONSUME;
-        }
-        return super.interactMob(player, hand);
+    public boolean isGuardShooting() {
+        return this.entityData.get(TD_GUARD_SHOOTING);
     }
 
     @Override
-    protected void initGoals() {
-        this.goalSelector.add(0, new StudentRideWithOwnerGoal(this, this));
-        this.goalSelector.add(1, new SwimGoal(this));
+    protected InteractionResult mobInteract(Player player, InteractionHand hand) {
+        if (this.level().isClientSide()) {
+            return InteractionResult.SUCCESS;
+        }
 
-        // 共通LOOK（回避中はAim側が触らない実装になってる前提）
-        this.goalSelector.add(2, new StudentAimGoal(this, this));
+        UUID owner = getOwnerUuid();
+        if (owner == null) {
+            setOwnerUuid(player.getUUID());
+            owner = player.getUUID();
+        }
 
-        // ===== MOVE：フォーム別 =====
-        // BR回避（BRのみ動く）
-        this.goalSelector.add(3, new HoshinoBrEvadeGoal(this, this));
+        if (!player.getUUID().equals(owner)) {
+            return InteractionResult.CONSUME;
+        }
 
-        this.goalSelector.add(4, new HoshinoGuardGoal(this, this));
+        ItemStack inHand = player.getItemInHand(hand);
 
-        // Normal回避（Normalのみ動く）
-        this.goalSelector.add(5, new StudentEvadeGoal(this, this));
+        if (player.isShiftKeyDown() && inHand.isEmpty()) {
+            BedLinkManager.setLinking(player.getUUID(), StudentId.HOSHINO);
+            player.sendSystemMessage(Component.translatable("msg.blue_student.link_mode", "hoshino"));
+            return InteractionResult.CONSUME;
+        }
 
+        return super.mobInteract(player, hand);
+    }
 
+    @Override
+    protected void registerGoals() {
+        this.goalSelector.addGoal(0, new StudentRideWithOwnerGoal(this, this));
+        this.goalSelector.addGoal(1, new FloatGoal(this));
 
-        // BR戦闘（BRのみ）
-        this.goalSelector.add(7, new HoshinoBrCombatGoal(this, this));
+        this.goalSelector.addGoal(2, new StudentAimGoal(this, this));
+        this.goalSelector.addGoal(3, new HoshinoBrEvadeGoal(this, this));
+        this.goalSelector.addGoal(4, new HoshinoGuardGoal(this, this));
+        this.goalSelector.addGoal(5, new StudentEvadeGoal(this, this));
+        this.goalSelector.addGoal(7, new HoshinoBrCombatGoal(this, this));
+        this.goalSelector.addGoal(8, new StudentCombatGoal(this, this));
+        this.goalSelector.addGoal(9, new StudentStuckEscapeGoal(this, this));
 
-        // Normal戦闘（Normalのみ）
-        this.goalSelector.add(8, new StudentCombatGoal(this, this));
-
-        // 詰まり脱出（共通）
-        this.goalSelector.add(9, new StudentStuckEscapeGoal(this, this));
-
-        // 以降、Follow/Security/Eatなど共通
-        this.goalSelector.add(10, new StudentFollowGoal(this, this, 1.1));
-        this.goalSelector.add(11, new StudentSecurityGoal(this, this,
+        this.goalSelector.addGoal(10, new StudentFollowGoal(this, this, 1.1));
+        this.goalSelector.addGoal(11, new StudentSecurityGoal(this, this,
                 new StudentSecurityGoal.ISecurityPosProvider() {
-                    @Override public BlockPos getSecurityPos() { return HoshinoEntity.this.getSecurityPos(); }
-                    @Override public void setSecurityPos(BlockPos pos) { HoshinoEntity.this.setSecurityPos(pos); }
+                    @Override
+                    public BlockPos getSecurityPos() {
+                        return HoshinoEntity.this.getSecurityPos();
+                    }
+
+                    @Override
+                    public void setSecurityPos(BlockPos pos) {
+                        HoshinoEntity.this.setSecurityPos(pos);
+                    }
                 },
                 1.0));
-        this.goalSelector.add(12, new StudentEatGoal(this, this));
+        this.goalSelector.addGoal(12, new StudentEatGoal(this, this));
     }
 
     @Override
     public void tick() {
         super.tick();
 
-
-
-        if (!this.getWorld().isClient && this.getWorld() instanceof ServerWorld sw) {
-            tickGuardSkill(sw);
+        if (!this.level().isClientSide() && this.level() instanceof ServerLevel serverLevel) {
+            tickGuardSkill(serverLevel);
         }
     }
 
-
-
-
-
-    // ===== Guard Skill State Machine =====
-    private void tickGuardSkill(ServerWorld sw) {
-
-        // ★BR中は通常ガードスキルを無効化（BR挙動と混ざるため）
-        if (getForm() == com.licht_meilleur.blue_student.student.StudentForm.BR) {
-            if (guarding) setGuardingInternal(false);
+    private void tickGuardSkill(ServerLevel serverLevel) {
+        if (getForm() == StudentForm.BR) {
+            if (isGuarding()) {
+                setGuardingInternal(false);
+            }
             guardActiveTicks = 0;
             guardCooldownTicks = 0;
             return;
         }
 
-
-        // 復活ロック中は一切ガードしない
         if (this.isLifeLockedForGoal()) {
-            if (guarding) setGuardingInternal(false);
+            if (isGuarding()) {
+                setGuardingInternal(false);
+            }
             guardActiveTicks = 0;
             guardCooldownTicks = 0;
             return;
         }
 
-        if (guardCooldownTicks > 0) guardCooldownTicks--;
+        if (guardCooldownTicks > 0) {
+            guardCooldownTicks--;
+        }
 
         if (guardActiveTicks > 0) {
             guardActiveTicks--;
 
-            // 発動中はタウント継続（敵のターゲットを定期更新）
-            if (this.age % TAUNT_INTERVAL_TICKS == 0) {
-                applyTaunt(sw);
+            if (this.tickCount % TAUNT_INTERVAL_TICKS == 0) {
+                applyTaunt(serverLevel);
             }
 
-            if (!guarding) setGuardingInternal(true);
+            if (!isGuarding()) {
+                setGuardingInternal(true);
+            }
 
-            // 終了処理
             if (guardActiveTicks == 0) {
                 setGuardingInternal(false);
                 guardCooldownTicks = GUARD_COOLDOWN_TICKS;
@@ -243,75 +236,76 @@ public class HoshinoEntity extends AbstractStudentEntity {
             return;
         }
 
-        // 非発動中：危険なら開始（ただしCDが0の時だけ）
         if (guardCooldownTicks <= 0) {
-            boolean danger = hasNearbyEnemy(sw) || hasIncomingProjectile(sw);
+            boolean danger = hasNearbyEnemy(serverLevel) || hasIncomingProjectile(serverLevel);
             if (danger) {
-                startGuardSkill(sw);
+                startGuardSkill(serverLevel);
             }
         }
     }
 
-    private void startGuardSkill(ServerWorld sw) {
+    private void startGuardSkill(ServerLevel serverLevel) {
         guardActiveTicks = GUARD_DURATION_TICKS;
         setGuardingInternal(true);
-
-        // 開始時に強めタウント
-        applyTaunt(sw);
+        applyTaunt(serverLevel);
     }
 
-    // ===== 危険検知 =====
-    private boolean hasNearbyEnemy(ServerWorld sw) {
-        var box = this.getBoundingBox().expand(2.0);
-        return !sw.getEntitiesByClass(
-                net.minecraft.entity.mob.HostileEntity.class,
+    private boolean hasNearbyEnemy(ServerLevel serverLevel) {
+        var box = this.getBoundingBox().inflate(2.0);
+        return !serverLevel.getEntitiesOfClass(
+                Monster.class,
                 box,
                 e -> e.isAlive()
         ).isEmpty();
     }
 
-    private boolean hasIncomingProjectile(ServerWorld sw) {
-        var box = this.getBoundingBox().expand(8.0);
-        var myPos = this.getEyePos();
+    private boolean hasIncomingProjectile(ServerLevel serverLevel) {
+        var box = this.getBoundingBox().inflate(8.0);
+        var myPos = this.getEyePosition();
 
-        var list = sw.getEntitiesByClass(
-                net.minecraft.entity.projectile.ProjectileEntity.class,
+        var list = serverLevel.getEntitiesOfClass(
+                Projectile.class,
                 box,
                 p -> p.isAlive()
         );
 
         for (var p : list) {
-            Vec3d v = p.getVelocity();
-            if (v.lengthSquared() < 0.01) continue;
+            Vec3 v = p.getDeltaMovement();
+            if (v.lengthSqr() < 0.01) {
+                continue;
+            }
 
-            Vec3d toMe = myPos.subtract(p.getPos());
-            if (toMe.lengthSquared() < 0.01) continue;
+            Vec3 toMe = myPos.subtract(p.position());
+            if (toMe.lengthSqr() < 0.01) {
+                continue;
+            }
 
-            double dot = v.normalize().dotProduct(toMe.normalize());
-            if (dot > 0.85) return true;
+            double dot = v.normalize().dot(toMe.normalize());
+            if (dot > 0.85) {
+                return true;
+            }
         }
         return false;
     }
 
-    // ===== タウント（ヘイト集め）=====
-    private void applyTaunt(ServerWorld sw) {
-        var box = this.getBoundingBox().expand(TAUNT_RADIUS);
+    private void applyTaunt(ServerLevel serverLevel) {
+        var box = this.getBoundingBox().inflate(TAUNT_RADIUS);
 
-        var mobs = sw.getEntitiesByClass(
-                net.minecraft.entity.mob.HostileEntity.class,
+        var mobs = serverLevel.getEntitiesOfClass(
+                Monster.class,
                 box,
                 e -> e.isAlive()
         );
 
         for (var m : mobs) {
-            // すでに別ターゲットでも上書きしてOK（タンクなので）
             m.setTarget(this);
         }
     }
 
-    // ===== バフON/OFF + 移動減速 =====
     private void setGuardingInternal(boolean on) {
-        if (!this.getWorld().isClient) this.dataTracker.set(TD_GUARDING, on);
+        if (!this.level().isClientSide()) {
+            this.entityData.set(TD_GUARDING, on);
+        }
 
         if (on) {
             applyGuardBuff(true, 8.0, 6.0, 6.0f);
@@ -319,60 +313,56 @@ public class HoshinoEntity extends AbstractStudentEntity {
         } else {
             applyGuardBuff(false, 0, 0, 0);
             setMovementSpeedMultiplier(1.00);
-            if (!this.getWorld().isClient) this.dataTracker.set(TD_GUARD_SHOOTING, false);
+            if (!this.level().isClientSide()) {
+                this.entityData.set(TD_GUARD_SHOOTING, false);
+            }
         }
     }
 
-
     private void setMovementSpeedMultiplier(double mul) {
-        var inst = getAttributeInstance(net.minecraft.entity.attribute.EntityAttributes.GENERIC_MOVEMENT_SPEED);
-        if (inst == null) return;
+        var inst = getAttribute(Attributes.MOVEMENT_SPEED);
+        if (inst == null) {
+            return;
+        }
 
         if (baseMoveSpeedCached < 0) {
             baseMoveSpeedCached = inst.getBaseValue();
-            if (baseMoveSpeedCached <= 0) baseMoveSpeedCached = 0.35;
+            if (baseMoveSpeedCached <= 0) {
+                baseMoveSpeedCached = 0.35;
+            }
         }
+
         inst.setBaseValue(baseMoveSpeedCached * mul);
     }
 
-    // ===== アニメ差し替え =====
     @Override
     protected RawAnimation getOverrideAnimationIfAny() {
-        // ★BR中は通常ガード演出を使わない（guard_walkログの根本原因）
-        if (getForm() == com.licht_meilleur.blue_student.student.StudentForm.BR) {
+        if (getForm() == StudentForm.BR) {
             return null;
         }
 
-        // ===== 通常フォームのガード処理 =====
-        if (!isGuarding()) return null;
+        if (!isGuarding()) {
+            return null;
+        }
 
-        if (isGuardShooting()) return GUARD_SHOT;
+        if (isGuardShooting()) {
+            return GUARD_SHOT;
+        }
 
-        boolean moving = this.getVelocity().horizontalLengthSquared() > 0.002;
+        boolean moving = this.getDeltaMovement().horizontalDistanceSqr() > 0.002;
         return moving ? GUARD_WALK : GUARD_IDLE;
     }
 
-
     public void setGuardShooting(boolean v) {
-        if (!this.getWorld().isClient) this.dataTracker.set(TD_GUARD_SHOOTING, v);
+        if (!this.level().isClientSide()) {
+            this.entityData.set(TD_GUARD_SHOOTING, v);
+        }
     }
 
     @Override
-    protected void initDataTracker() {
-        super.initDataTracker();
-        this.dataTracker.startTracking(TD_GUARDING, false);
-        this.dataTracker.startTracking(TD_GUARD_SHOOTING, false);
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        super.defineSynchedData(builder);
+        builder.define(TD_GUARDING, false);
+        builder.define(TD_GUARD_SHOOTING, false);
     }
-
-    @Override
-    public boolean damage(net.minecraft.entity.damage.DamageSource source, float amount) {
-        boolean ok = super.damage(source, amount);
-        //if (!this.getWorld().isClient) {
-          //  System.out.println("[DMG] ok=" + ok + " amount=" + amount
-            //        + " src=" + source.getName()
-            //        + " hp=" + this.getHealth());
-        //}
-        return ok;
-    }
-
 }

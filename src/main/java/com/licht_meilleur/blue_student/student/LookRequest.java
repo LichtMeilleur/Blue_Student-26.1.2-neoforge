@@ -1,16 +1,15 @@
 package com.licht_meilleur.blue_student.student;
 
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.phys.Vec3;
 
 public class LookRequest {
     public LookIntentType type = LookIntentType.NONE;
-    public LivingEntity target = null;  // TARGET / AWAY_FROM
-    public Vec3d dir = null;            // WORLD_DIR
+    public LivingEntity target = null;
+    public Vec3 dir = null;
     public int priority = 0;
     public int holdTicks = 0;
-    public Vec3d pos = null; // ★追加（POS用）
-
+    public Vec3 pos = null;
 
     public void clear() {
         type = LookIntentType.NONE;
@@ -18,7 +17,6 @@ public class LookRequest {
         dir = null;
         priority = 0;
         holdTicks = 0;
-        pos = null; // ★追加（POS用）
-
+        pos = null;
     }
 }

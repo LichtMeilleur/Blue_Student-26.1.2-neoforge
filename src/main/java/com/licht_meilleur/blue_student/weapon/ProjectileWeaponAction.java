@@ -4,76 +4,67 @@ import com.licht_meilleur.blue_student.entity.AbstractStudentEntity;
 import com.licht_meilleur.blue_student.entity.projectile.StudentBulletEntity;
 import com.licht_meilleur.blue_student.network.ServerFx;
 import com.licht_meilleur.blue_student.student.IStudentEntity;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.damage.DamageSource;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.hit.EntityHitResult;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.util.math.random.Random;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.phys.Vec3;
 
 public class ProjectileWeaponAction implements WeaponAction {
 
     @Override
     public boolean shoot(IStudentEntity shooter, LivingEntity target, WeaponSpec spec) {
         if (!(shooter instanceof Entity shooterEntity)) return false;
-        if (!(shooterEntity.getWorld() instanceof ServerWorld sw)) return false;
+        if (!(shooterEntity.level() instanceof ServerLevel sw)) return false;
         if (target == null || !target.isAlive()) return false;
 
-        // ★ここを追加：キサキ支援倍率などを反映した最終ダメージ
         float damage = spec.damage;
         if (shooterEntity instanceof AbstractStudentEntity se && se.hasKisakiSupportBuff()) {
-            damage *= 1.25f; // 好きな倍率に
+            damage *= 1.25f;
         }
 
-
-
-        // 発射位置
-        final Vec3d spawnPos = (shooterEntity instanceof AbstractStudentEntity se)
+        final Vec3 spawnPos = (shooterEntity instanceof AbstractStudentEntity se)
                 ? se.getMuzzlePosFor(spec)
-                : shooterEntity.getEyePos();
+                : shooterEntity.getEyePosition();
 
-        if (shooterEntity.age % 10 == 0) {
+        if (shooterEntity.tickCount % 10 == 0) {
             System.out.println("[MUZZLE] spec=" + spec.muzzleLocator
-                    + " shooterPos=" + shooterEntity.getPos()
-                    + " eye=" + shooterEntity.getEyePos()
+                    + " shooterPos=" + shooterEntity.position()
+                    + " eye=" + shooterEntity.getEyePosition()
                     + " spawn=" + spawnPos
-                    + " isClient=" + shooterEntity.getWorld().isClient);
+                    + " isClient=" + shooterEntity.level().isClientSide());
         }
 
-
-        Random r = sw.getRandom();
+        RandomSource r = sw.getRandom();
 
         int pellets = Math.max(1, spec.pellets);
-        Vec3d[] fxDirs = new Vec3d[pellets];
+        Vec3[] fxDirs = new Vec3[pellets];
 
-        Vec3d baseAim = target.getEyePos().subtract(spawnPos).normalize();
+        Vec3 baseAim = target.getEyePosition().subtract(spawnPos).normalize();
 
         for (int i = 0; i < pellets; i++) {
-            Vec3d dir = applySpread(baseAim, spec.spreadRad, r);
-            fxDirs[i] = dir; // ★FX用に保存
+            Vec3 dir = applySpread(baseAim, spec.spreadRad, r);
+            fxDirs[i] = dir;
 
             StudentBulletEntity bullet = new StudentBulletEntity(sw, shooterEntity, damage)
                     .setBypassIFrames(spec.bypassIFrames)
                     .setKnockback(spec.knockback);
 
-            bullet.setPosition(spawnPos.x, spawnPos.y, spawnPos.z);
-            bullet.setYaw(shooterEntity.getYaw());
-            bullet.setPitch(shooterEntity.getPitch());
-            bullet.setVelocity(dir.x, dir.y, dir.z, spec.projectileSpeed, 0.0f);
+            bullet.setPos(spawnPos.x, spawnPos.y, spawnPos.z);
+            bullet.setYRot(shooterEntity.getYRot());
+            bullet.setXRot(shooterEntity.getXRot());
+            bullet.setDeltaMovement(dir.normalize().scale(spec.projectileSpeed));
 
-            sw.spawnEntity(bullet);
+            sw.addFreshEntity(bullet);
         }
 
-        // travelDist は「見た目の長さ」なので、とりあえず spec.range でOK（プロジェクタイルは実際に飛ぶ）
         float travelDist = (float) spec.range;
 
         ServerFx.sendShotFx(
                 sw,
                 shooterEntity.getId(),
                 spawnPos,
-                spec.fxType,   // BULLET or SHOTGUN
+                spec.fxType,
                 spec.fxWidth,
                 fxDirs,
                 travelDist
@@ -82,19 +73,21 @@ public class ProjectileWeaponAction implements WeaponAction {
         return true;
     }
 
-    private Vec3d applySpread(Vec3d dir, float spreadRad, Random r) {
+    private Vec3 applySpread(Vec3 dir, float spreadRad, RandomSource r) {
         if (spreadRad <= 0.0001f) return dir;
 
         double yaw = (r.nextDouble() * 2.0 - 1.0) * spreadRad;
         double pitch = (r.nextDouble() * 2.0 - 1.0) * spreadRad;
 
-        Vec3d d = dir;
+        Vec3 d = dir;
 
-        double cosY = Math.cos(yaw), sinY = Math.sin(yaw);
-        d = new Vec3d(d.x * cosY - d.z * sinY, d.y, d.x * sinY + d.z * cosY);
+        double cosY = Math.cos(yaw);
+        double sinY = Math.sin(yaw);
+        d = new Vec3(d.x * cosY - d.z * sinY, d.y, d.x * sinY + d.z * cosY);
 
-        double cosP = Math.cos(pitch), sinP = Math.sin(pitch);
-        d = new Vec3d(d.x, d.y * cosP - d.z * sinP, d.y * sinP + d.z * cosP);
+        double cosP = Math.cos(pitch);
+        double sinP = Math.sin(pitch);
+        d = new Vec3(d.x, d.y * cosP - d.z * sinP, d.y * sinP + d.z * cosP);
 
         return d.normalize();
     }
@@ -102,41 +95,32 @@ public class ProjectileWeaponAction implements WeaponAction {
     public boolean shootFromCustomPos(Entity damageOwner,
                                       LivingEntity target,
                                       WeaponSpec spec,
-                                      Vec3d spawnPos,
-                                      Vec3d dir) {
+                                      Vec3 spawnPos,
+                                      Vec3 dir) {
 
-        if (!(damageOwner.getWorld() instanceof ServerWorld sw)) return false;
+        if (!(damageOwner.level() instanceof ServerLevel sw)) return false;
         if (target == null || !target.isAlive()) return false;
 
-        var r = sw.getRandom();
+        RandomSource r = sw.getRandom();
 
         int pellets = Math.max(1, spec.pellets);
-        Vec3d[] fxDirs = new Vec3d[pellets];
-
-        Vec3d base = dir.normalize();
+        Vec3 base = dir.normalize();
 
         for (int i = 0; i < pellets; i++) {
-            Vec3d d = applySpread(base, spec.spreadRad, r);
-            fxDirs[i] = d;
+            Vec3 d = applySpread(base, spec.spreadRad, r);
 
             StudentBulletEntity bullet = new StudentBulletEntity(sw, damageOwner, spec.damage)
                     .setBypassIFrames(spec.bypassIFrames)
                     .setKnockback(spec.knockback);
 
-            bullet.setPosition(spawnPos.x, spawnPos.y, spawnPos.z);
-            bullet.setYaw(damageOwner.getYaw());
-            bullet.setPitch(damageOwner.getPitch());
-            bullet.setVelocity(d.x, d.y, d.z, spec.projectileSpeed, 0.0f);
+            bullet.setPos(spawnPos.x, spawnPos.y, spawnPos.z);
+            bullet.setYRot(damageOwner.getYRot());
+            bullet.setXRot(damageOwner.getXRot());
+            bullet.setDeltaMovement(d.normalize().scale(spec.projectileSpeed));
 
-            sw.spawnEntity(bullet);
+            sw.addFreshEntity(bullet);
         }
 
-        float travelDist = (float) spec.range;
-
-        // ★FXは「弾の責任者」ではなく、呼び出し側が決めたいのでここでは送らない
-        // （ドローン側から shooterId を this.getId() で送るため）
         return true;
     }
-
-
 }

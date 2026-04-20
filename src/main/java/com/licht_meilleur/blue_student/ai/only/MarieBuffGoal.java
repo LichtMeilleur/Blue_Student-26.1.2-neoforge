@@ -3,15 +3,15 @@ package com.licht_meilleur.blue_student.ai.only;
 import com.licht_meilleur.blue_student.entity.AbstractStudentEntity;
 import com.licht_meilleur.blue_student.entity.MarieEntity;
 import com.licht_meilleur.blue_student.student.IStudentEntity;
-import net.minecraft.entity.ai.goal.Goal;
-import net.minecraft.entity.effect.StatusEffectInstance;
-import net.minecraft.entity.effect.StatusEffects;
-import net.minecraft.particle.ParticleTypes;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.util.Mth;
 
 import java.util.EnumSet;
 import java.util.UUID;
@@ -22,106 +22,95 @@ public class MarieBuffGoal extends Goal {
     private final IStudentEntity student;
 
     private static final double RANGE = 14.0;
-    private static final int CHECK_INTERVAL = 20; // 1秒
+    private static final int CHECK_INTERVAL = 20;
 
-    // バフの持続（次のtickで延長する想定）
-    private static final int BUFF_TTL_TICKS = 60; // 3秒
+    private static final int BUFF_TTL_TICKS = 60;
 
-    // 付与する効果（例）
-    private static final int ABSORPTION_AMP = 0; // Lv1
-    private static final int REGEN_AMP      = 0; // Lv1
+    private static final int ABSORPTION_AMP = 0;
+    private static final int REGEN_AMP = 0;
 
     private int nextCheck = 0;
 
-    // “今バフしている相手”
     private UUID currentTargetPlayer = null;
 
     public MarieBuffGoal(AbstractStudentEntity marie, IStudentEntity student) {
         this.marie = marie;
         this.student = student;
-        this.setControls(EnumSet.noneOf(Control.class)); // 競合ゼロ
+        this.setFlags(EnumSet.noneOf(Flag.class));
     }
 
     @Override
-    public boolean canStart() {
-        return !marie.getWorld().isClient && !marie.isLifeLockedForGoal();
+    public boolean canUse() {
+        return !marie.level().isClientSide() && !marie.isLifeLockedForGoal();
     }
 
     @Override
-    public boolean shouldContinue() {
-        return canStart();
+    public boolean canContinueToUse() {
+        return canUse();
     }
+
+
 
     @Override
     public void tick() {
-        if (marie.getWorld().isClient) return;
+        if (marie.level().isClientSide()) return;
         if (--nextCheck > 0) return;
         nextCheck = CHECK_INTERVAL;
 
-        if (!(marie.getWorld() instanceof ServerWorld sw)) return;
+        if (!(marie.level() instanceof ServerLevel serverLevel)) return;
 
-        // 1) まず「オーナーのプレイヤー」を優先ターゲットにする
         UUID owner = student.getOwnerUuid();
-        ServerPlayerEntity ownerPlayer = null;
+        ServerPlayer ownerPlayer = null;
         if (owner != null) {
-            ownerPlayer = sw.getServer().getPlayerManager().getPlayer(owner);
+            ownerPlayer = resolvePlayer(serverLevel, owner);
             if (!isValidTarget(ownerPlayer)) ownerPlayer = null;
         }
 
-        // 2) 既存ターゲット維持（オーナーが有効ならそれ優先で上書き）
-        ServerPlayerEntity cur = resolvePlayer(sw, currentTargetPlayer);
+        ServerPlayer cur = resolvePlayer(serverLevel, currentTargetPlayer);
 
-        // オーナーが有効なら、オーナーに固定
         if (ownerPlayer != null) {
-            if (currentTargetPlayer == null || !ownerPlayer.getUuid().equals(currentTargetPlayer)) {
-                currentTargetPlayer = ownerPlayer.getUuid();
-                onTargetChanged(sw, ownerPlayer);
+            if (currentTargetPlayer == null || !ownerPlayer.getUUID().equals(currentTargetPlayer)) {
+                currentTargetPlayer = ownerPlayer.getUUID();
+                onTargetChanged(serverLevel, ownerPlayer);
             }
-            applyAndRefresh(sw, ownerPlayer);
+            applyAndRefresh(serverLevel, ownerPlayer);
             return;
         }
 
-        // オーナーが居ない/範囲外 → 既存ターゲットが有効なら維持
         if (isValidTarget(cur)) {
-            applyAndRefresh(sw, cur);
+            applyAndRefresh(serverLevel, cur);
             return;
         }
 
-        // 3) 既存無効 → 近くのプレイヤー（任意：オーナー不問）から最寄りを選ぶ
-        ServerPlayerEntity best = findNearestPlayerInRange(sw);
+        ServerPlayer best = findNearestPlayerInRange(serverLevel);
         if (best != null) {
-            if (currentTargetPlayer == null || !best.getUuid().equals(currentTargetPlayer)) {
-                currentTargetPlayer = best.getUuid();
-                onTargetChanged(sw, best);
+            if (currentTargetPlayer == null || !best.getUUID().equals(currentTargetPlayer)) {
+                currentTargetPlayer = best.getUUID();
+                onTargetChanged(serverLevel, best);
             }
-            applyAndRefresh(sw, best);
+            applyAndRefresh(serverLevel, best);
         } else {
             currentTargetPlayer = null;
         }
     }
 
-    private boolean isValidTarget(ServerPlayerEntity p) {
+    private boolean isValidTarget(ServerPlayer p) {
         if (p == null) return false;
         if (!p.isAlive()) return false;
 
         double r2 = RANGE * RANGE;
-        if (marie.squaredDistanceTo(p) > r2) return false;
-
-        // 好み：見えている相手だけにしたいなら
-        // if (!marie.canSee(p)) return false;
-
-        return true;
+        return marie.distanceToSqr(p) <= r2;
     }
 
-    private ServerPlayerEntity findNearestPlayerInRange(ServerWorld sw) {
-        ServerPlayerEntity best = null;
-        double bestD2 = 1e18;
+    private ServerPlayer findNearestPlayerInRange(ServerLevel serverLevel) {
+        ServerPlayer best = null;
+        double bestD2 = Double.MAX_VALUE;
 
-        Box box = marie.getBoundingBox().expand(RANGE);
-        for (ServerPlayerEntity sp : sw.getPlayers()) {
-            if (!box.contains(sp.getPos())) continue;
+        AABB box = marie.getBoundingBox().inflate(RANGE);
+        for (ServerPlayer sp : serverLevel.players()) {
+            if (!box.contains(sp.position())) continue;
             if (!isValidTarget(sp)) continue;
-            double d2 = marie.squaredDistanceTo(sp);
+            double d2 = marie.distanceToSqr(sp);
             if (d2 < bestD2) {
                 bestD2 = d2;
                 best = sp;
@@ -130,100 +119,85 @@ public class MarieBuffGoal extends Goal {
         return best;
     }
 
-    private ServerPlayerEntity resolvePlayer(ServerWorld sw, UUID uuid) {
+    private ServerPlayer resolvePlayer(ServerLevel serverLevel, UUID uuid) {
         if (uuid == null) return null;
-        return sw.getServer().getPlayerManager().getPlayer(uuid);
+
+        for (ServerPlayer sp : serverLevel.players()) {
+            if (uuid.equals(sp.getUUID())) return sp;
+        }
+        return null;
     }
 
-    private void applyAndRefresh(ServerWorld sw, ServerPlayerEntity target) {
-        // ★ここが「バフ本体」：例として吸収＋リジェネ
-        target.addStatusEffect(new StatusEffectInstance(StatusEffects.ABSORPTION, BUFF_TTL_TICKS, ABSORPTION_AMP, true, true, true));
-        target.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, BUFF_TTL_TICKS, REGEN_AMP, true, true, true));
+    private void applyAndRefresh(ServerLevel serverLevel, ServerPlayer target) {
+        target.addEffect(new MobEffectInstance(MobEffects.ABSORPTION, BUFF_TTL_TICKS, ABSORPTION_AMP, true, true, true));
+        target.addEffect(new MobEffectInstance(MobEffects.REGENERATION, BUFF_TTL_TICKS, REGEN_AMP, true, true, true));
 
-        // 視認用：対象の頭上（控えめ）
-        spawnTargetParticles(sw, target);
+        spawnTargetParticles(serverLevel, target);
     }
 
-    private void onTargetChanged(ServerWorld sw, ServerPlayerEntity newTarget) {
-        // ① マリーの祈りアニメ（あなたのトリガー）
+    private void onTargetChanged(ServerLevel serverLevel, ServerPlayer newTarget) {
         if (marie instanceof MarieEntity me) {
             me.requestBuff();
         }
 
-        // ② バフ開始の派手演出：風で左に流す（マリー起点）
-        spawnWindBurstFromMarie(sw);
+        spawnWindBurstFromMarie(serverLevel);
     }
 
-    private void spawnTargetParticles(ServerWorld sw, ServerPlayerEntity target) {
-        Vec3d p = target.getPos().add(0, target.getHeight() + 0.2, 0);
-        sw.spawnParticles(ParticleTypes.HAPPY_VILLAGER,
+    private void spawnTargetParticles(ServerLevel serverLevel, ServerPlayer target) {
+        Vec3 p = target.position().add(0, target.getBbHeight() + 0.2, 0);
+        serverLevel.sendParticles(
+                ParticleTypes.HAPPY_VILLAGER,
                 p.x, p.y, p.z,
-                6,          // count
-                0.25, 0.15, 0.25, // spread
-                0.01        // speed
+                6,
+                0.25, 0.15, 0.25,
+                0.01
         );
     }
 
-    /**
-     * 「マリーから見て左」に風で流れる演出
-     * - yawから左ベクトルを計算
-     * - count=0で1粒ずつ速度を指定して流す
-     */
-    private void spawnWindBurstFromMarie(ServerWorld sw) {
-        Vec3d origin = marie.getPos().add(0, marie.getStandingEyeHeight() - 0.1, 0);
+    private void spawnWindBurstFromMarie(ServerLevel serverLevel) {
+        Vec3 origin = marie.position().add(0, marie.getEyeHeight() - 0.1, 0);
 
-        // yaw（度→rad）
-        float yawRad = marie.getYaw() * MathHelper.RADIANS_PER_DEGREE;
+        float yawRad = marie.getYRot() * Mth.DEG_TO_RAD;
+        Vec3 forward = new Vec3(-Mth.sin(yawRad), 0, Mth.cos(yawRad));
+        Vec3 driftSide = new Vec3(-forward.z, 0, forward.x).normalize().scale(-1.0);
 
-        // 前方（XZ）
-        Vec3d forward = new Vec3d(-MathHelper.sin(yawRad), 0, MathHelper.cos(yawRad));
+        int n = 26;
+        double sideSpeed = 0.16;
+        double upSpeed = 0.07;
+        double spreadVel = 0.10;
 
-        // 元: left = (-forward.z, 0, forward.x)
-        // ★逆向きだったので反転（=右ベクトルにする）
-        Vec3d driftSide = new Vec3d(-forward.z, 0, forward.x).normalize().multiply(-1.0);
-
-        // 祈りの「光の粒」：ふわっと上昇＋左右へ流れ＋外側へ拡散
-        int n = 26;                 // 粒数
-        double sideSpeed = 0.16;    // 左右へ流れる強さ
-        double upSpeed   = 0.07;    // 上昇
-        double spreadVel = 0.10;    // 拡散（散っていく）
+        var rand = serverLevel.getRandom();
 
         for (int i = 0; i < n; i++) {
-            // 粒の初期位置：originの周りに小さくばらす
-            double ox = (sw.random.nextDouble() - 0.5) * 0.25;
-            double oy = (sw.random.nextDouble()) * 0.25;       // 少し上側に寄せる
-            double oz = (sw.random.nextDouble() - 0.5) * 0.25;
+            double ox = (rand.nextDouble() - 0.5) * 0.25;
+            double oy = (rand.nextDouble()) * 0.25;
+            double oz = (rand.nextDouble() - 0.5) * 0.25;
 
-            Vec3d spawnPos = origin.add(ox, oy, oz);
+            Vec3 spawnPos = origin.add(ox, oy, oz);
 
-            // ランダムな「外向き」方向（XZ中心、少し上下も）
-            double rx = (sw.random.nextDouble() - 0.5);
-            double ry = (sw.random.nextDouble() - 0.2) * 0.35; // 上方向ちょい多め
-            double rz = (sw.random.nextDouble() - 0.5);
-            Vec3d radial = new Vec3d(rx, ry, rz).normalize();
+            double rx = (rand.nextDouble() - 0.5);
+            double ry = (rand.nextDouble() - 0.2) * 0.35;
+            double rz = (rand.nextDouble() - 0.5);
+            Vec3 radial = new Vec3(rx, ry, rz).normalize();
 
-            // 最終速度：左右ドリフト + 上昇 + 拡散
-            Vec3d vel = driftSide.multiply(sideSpeed)
+            Vec3 vel = driftSide.scale(sideSpeed)
                     .add(0, upSpeed, 0)
-                    .add(radial.multiply(spreadVel));
+                    .add(radial.scale(spreadVel));
 
-            // 光粒子：END_ROD は「キラキラ」感が強く、祈りっぽくなる
-            sw.spawnParticles(
+            serverLevel.sendParticles(
                     ParticleTypes.END_ROD,
                     spawnPos.x, spawnPos.y, spawnPos.z,
-                    0,          // count=0（速度を粒ごとに指定する）
+                    0,
                     vel.x, vel.y, vel.z,
                     1.0
             );
         }
 
-        // 仕上げに「淡いもや」を少し（広がって消える感じの補助）
-        // ※count>0 で spread を使うと “ふわっ” が出しやすい
-        sw.spawnParticles(
+        serverLevel.sendParticles(
                 ParticleTypes.ENCHANT,
                 origin.x, origin.y + 0.15, origin.z,
-                18,                 // count
-                0.35, 0.25, 0.35,   // spread
+                18,
+                0.35, 0.25, 0.35,
                 0.01
         );
     }

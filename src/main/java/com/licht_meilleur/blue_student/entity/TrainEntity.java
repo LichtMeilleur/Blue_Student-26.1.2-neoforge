@@ -1,25 +1,31 @@
 package com.licht_meilleur.blue_student.entity;
 
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.MovementType;
-import net.minecraft.entity.data.DataTracker;
-import net.minecraft.entity.data.TrackedData;
-import net.minecraft.entity.data.TrackedDataHandlerRegistry;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
-import software.bernie.geckolib.animatable.GeoEntity;
-import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
-import software.bernie.geckolib.core.animation.AnimatableManager;
-import software.bernie.geckolib.core.animation.AnimationController;
-import software.bernie.geckolib.core.animation.RawAnimation;
-import software.bernie.geckolib.core.object.PlayState;
-import software.bernie.geckolib.util.GeckoLibUtil;
+import com.geckolib.animatable.GeoEntity;
+import com.geckolib.animatable.instance.AnimatableInstanceCache;
+import com.geckolib.animatable.manager.AnimatableManager;
+import com.geckolib.animation.AnimationController;
+import com.geckolib.animation.RawAnimation;
+import com.geckolib.animation.object.PlayState;
+import com.geckolib.util.GeckoLibUtil;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.Mth;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.damagesource.DamageTypes;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.MoverType;
+import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
+
 
 import java.util.UUID;
 
@@ -27,183 +33,209 @@ public class TrainEntity extends Entity implements GeoEntity {
 
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
-    // ===== リンク情報 =====
     private UUID ownerPlayerUuid;
     private UUID gunTrainUuid;
     private UUID targetUuid;
     private UUID nozomiPassengerUuid;
 
-    // ===== モード（★ここが肝）=====
     public enum TrainMode {
-        SINGLE_CHARGE,      // 単体：突撃（1回）だけ
-        COMBO_CYCLE         // 合体：巡航5秒→突撃→巡航5秒… を繰り返す
+        SINGLE_CHARGE,
+        COMBO_CYCLE
     }
 
     private TrainMode mode = TrainMode.SINGLE_CHARGE;
-    public TrainMode getMode() { return mode; }
-    public void setMode(TrainMode mode) { this.mode = mode; }
 
-    // ===== 合体時サイクル制御 =====
+    public TrainMode getMode() {
+        return mode;
+    }
+
+    public void setMode(TrainMode mode) {
+        this.mode = mode;
+    }
+
     private int phaseTicks = 0;
-    private boolean gunFireEnabled = true; // ★突撃中はfalseにする
-    public boolean isGunFireEnabled() { return gunFireEnabled; }
+    private boolean gunFireEnabled = true;
 
-    private static final int CRUISE_TICKS = 20 * 5; // 5秒
-    private static final int CHARGE_TICKS = 20 * 1; // 突撃持続（演出用。到達で早期終了）
+    public boolean isGunFireEnabled() {
+        return gunFireEnabled;
+    }
+
+    private static final int CRUISE_TICKS = 20 * 5;
+    private static final int CHARGE_TICKS = 20;
     private static final double CRUISE_SPEED = 0.35;
     private static final double CHARGE_SPEED = 1.25;
 
-    // ===== 合体巡航（円運動）パラメータ =====
     private float theta = 0f;
     private float radius = 6.0f;
     private float omega = 0.12f;
     private boolean clockwise = true;
 
+    private static final float CHARGE_HIT_RADIUS = 1.6f;
+    private static final float CHARGE_DAMAGE = 8.0f;
+    private static final double KNOCKBACK_H = 1.2;
+    private static final double KNOCKBACK_Y = 0.25;
+    private static final int SINGLE_CHARGE_MIN_TICKS = 6;
 
-    // ===== 突撃ヒット（ノゾミスキル）パラメータ =====
-    private static final float CHARGE_HIT_RADIUS = 1.6f;   // 当たり判定（半径）
-    private static final float CHARGE_DAMAGE     = 8.0f;   // ダメージ
-    private static final double KNOCKBACK_H      = 1.2;    // 横吹き飛ばし
-    private static final double KNOCKBACK_Y      = 0.25;   // 縦吹き飛ばし
-    private static final int SINGLE_CHARGE_MIN_TICKS = 6;  // 発生直後の誤爆防止
+    public TrainEntity setClockwise(boolean clockwise) {
+        this.clockwise = clockwise;
+        return this;
+    }
 
-
-    public TrainEntity setClockwise(boolean clockwise) { this.clockwise = clockwise; return this; }
-
-    // ===== 寿命 =====
     private int lifeTicks = 0;
-    private static final int MAX_LIFE = 20 * 15; // 15秒（好み）
+    private static final int MAX_LIFE = 20 * 15;
 
-    // ===== yaw同期 =====
-    private static final TrackedData<Float> SYNC_YAW =
-            DataTracker.registerData(TrainEntity.class, TrackedDataHandlerRegistry.FLOAT);
+    private static final EntityDataAccessor<Float> SYNC_YAW =
+            SynchedEntityData.defineId(TrainEntity.class, EntityDataSerializers.FLOAT);
 
-    public TrainEntity(EntityType<?> type, World world) {
-        super(type, world);
+    public TrainEntity(EntityType<?> type, Level level) {
+        super(type, level);
         this.setNoGravity(true);
-        this.noClip = true; // 合体/単体どっちも埋まり防止で true 推奨
+        this.noPhysics = true;
     }
 
     @Override
-    protected void initDataTracker() {
-        this.dataTracker.startTracking(SYNC_YAW, 0.0f);
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        builder.define(SYNC_YAW, 0.0f);
     }
 
-    public TrainEntity setOwnerPlayerUuid(UUID ownerPlayerUuid) { this.ownerPlayerUuid = ownerPlayerUuid; return this; }
-    public TrainEntity setGunTrainUuid(UUID gunUuid) { this.gunTrainUuid = gunUuid; return this; }
-    public TrainEntity setTargetUuid(UUID target) { this.targetUuid = target; return this; }
-    public TrainEntity setNozomiPassengerUuid(UUID id) { this.nozomiPassengerUuid = id; return this; }
+    public TrainEntity setOwnerPlayerUuid(UUID ownerPlayerUuid) {
+        this.ownerPlayerUuid = ownerPlayerUuid;
+        return this;
+    }
 
-    public UUID getOwnerPlayerUuid() { return ownerPlayerUuid; }
-    public UUID getGunTrainUuid() { return gunTrainUuid; }
-    public UUID getTargetUuid() { return targetUuid; }
+    public TrainEntity setGunTrainUuid(UUID gunUuid) {
+        this.gunTrainUuid = gunUuid;
+        return this;
+    }
+
+    public TrainEntity setTargetUuid(UUID target) {
+        this.targetUuid = target;
+        return this;
+    }
+
+    public TrainEntity setNozomiPassengerUuid(UUID id) {
+        this.nozomiPassengerUuid = id;
+        return this;
+    }
+
+    public UUID getOwnerPlayerUuid() {
+        return ownerPlayerUuid;
+    }
+
+    public UUID getGunTrainUuid() {
+        return gunTrainUuid;
+    }
+
+    public UUID getTargetUuid() {
+        return targetUuid;
+    }
 
     private void setYawStableServer(float yaw) {
-        float y = MathHelper.wrapDegrees(yaw);
-        this.prevYaw = y;
-        this.setYaw(y);
-        this.refreshPositionAndAngles(this.getX(), this.getY(), this.getZ(), y, 0.0f);
-        this.dataTracker.set(SYNC_YAW, y);
+        float y = Mth.wrapDegrees(yaw);
+        this.setYRot(y);
+        this.setYBodyRot(y);
+        this.setYHeadRot(y);
+        this.entityData.set(SYNC_YAW, y);
     }
 
     @Override
     public void tick() {
         super.tick();
 
-        // クライアント：同期Yawを適用
-        if (this.getWorld().isClient) {
-            float y = this.dataTracker.get(SYNC_YAW);
-            this.prevYaw = y;
-            this.setYaw(y);
+        if (this.level().isClientSide()) {
+            float y = this.entityData.get(SYNC_YAW);
+            this.setYRot(y);
+            this.setYBodyRot(y);
+            this.setYHeadRot(y);
             return;
         }
-        if (!(this.getWorld() instanceof ServerWorld sw)) return;
 
-        // 寿命・owner不在なら畳む
-        if (++lifeTicks > MAX_LIFE) { discardWithLinked(sw); return; }
-        if (!isOwnerAlive(sw))      { discardWithLinked(sw); return; }
+        if (!(this.level() instanceof ServerLevel serverLevel)) return;
 
+        if (++lifeTicks > MAX_LIFE) {
+            discardWithLinked(serverLevel);
+            return;
+        }
+        if (!isOwnerAlive(serverLevel)) {
+            discardWithLinked(serverLevel);
+            return;
+        }
 
-        Entity target = (targetUuid != null) ? sw.getEntity(targetUuid) : null;
+        Entity target = (targetUuid != null) ? serverLevel.getEntity(targetUuid) : null;
         if (target == null || !target.isAlive()) {
-            // ターゲット無しなら停止（必要なら畳むでもOK）
-            this.setVelocity(Vec3d.ZERO);
+            this.setDeltaMovement(Vec3.ZERO);
             return;
         }
 
-        // ★単体版では GunTrain 連結はしない（合体は別Entityでやる）
         gunTrainUuid = null;
         gunFireEnabled = false;
 
-        tickSingleCharge(sw, target);
+        tickSingleCharge(serverLevel, target);
     }
 
-    // ==============================
-    // 単体：突撃（1回）だけ
-    // ==============================
-    private void tickSingleCharge(ServerWorld sw, Entity target) {
-        // 発生直後の誤爆防止（スポーンした瞬間に近接判定を拾うのを避ける）
+    @Override
+    public boolean hurtServer(ServerLevel level, DamageSource source, float damage) {
+        return false;
+    }
+
+    @Override
+    protected void readAdditionalSaveData(ValueInput input) {
+
+    }
+
+    @Override
+    protected void addAdditionalSaveData(ValueOutput output) {
+
+    }
+
+    private void tickSingleCharge(ServerLevel serverLevel, Entity target) {
         if (lifeTicks > SINGLE_CHARGE_MIN_TICKS) {
-            if (tryChargeHit(sw)) {
-                // 1回当たったら終了（単体は“戻らない”）
-                endSkillAndDiscard(sw);
+            if (tryChargeHit(serverLevel)) {
+                endSkillAndDiscard(serverLevel);
                 return;
             }
         }
 
-        Vec3d from = this.getPos();
-        Vec3d to   = target.getPos().add(0, 0.2, 0);
-        Vec3d d    = to.subtract(from);
+        Vec3 from = this.position();
+        Vec3 to = target.position().add(0.0, 0.2, 0.0);
+        Vec3 d = to.subtract(from);
 
-        // ターゲット到達でも終了
-        if (d.lengthSquared() < 0.45) {
-            endSkillAndDiscard(sw);
+        if (d.lengthSqr() < 0.45) {
+            endSkillAndDiscard(serverLevel);
             return;
         }
 
-        Vec3d v = d.normalize().multiply(CHARGE_SPEED);
-        this.setVelocity(v);
-        this.move(MovementType.SELF, v);
+        Vec3 v = d.normalize().scale(CHARGE_SPEED);
+        this.setDeltaMovement(v);
+        this.move(MoverType.SELF, v);
 
-        if (v.horizontalLengthSquared() > 1.0e-6) {
-            float yaw = (float)(MathHelper.atan2(v.z, v.x) * (180.0 / Math.PI)) - 90.0f;
+        if (v.horizontalDistanceSqr() > 1.0e-6) {
+            float yaw = (float) (Math.toDegrees(Math.atan2(v.z, v.x)) - 90.0f);
             setYawStableServer(yaw);
         }
     }
 
-    // ==============================
-    // 合体：巡航5秒→突撃→巡航5秒…
-    // ==============================
-    private void tickComboCycle(ServerWorld sw, Entity target) {
-        // phaseTicks は「今のフェーズの残り」
-        // 0になったらフェーズ切替
+    private void tickComboCycle(ServerLevel serverLevel, Entity target) {
         if (phaseTicks <= 0) {
-            // フェーズ切替
-            // gunFireEnabled が true なら今から「突撃フェーズ」に入る、falseなら「巡航」に戻す
             if (gunFireEnabled) {
-                // 次：突撃（射撃停止）
                 gunFireEnabled = false;
                 phaseTicks = CHARGE_TICKS;
             } else {
-                // 次：巡航（射撃再開）
                 gunFireEnabled = true;
                 phaseTicks = CRUISE_TICKS;
             }
         }
 
-        // フェーズ処理
         if (gunFireEnabled) {
-            // 巡航：円運動（合体時のみ）
-            tickCruiseOrbit(sw, target);
+            tickCruiseOrbit(serverLevel, target);
         } else {
-            // 突撃：射撃停止、一直線
-            tickCharge(sw, target);
+            tickCharge(serverLevel, target);
         }
 
         phaseTicks--;
     }
 
-    private void tickCruiseOrbit(ServerWorld sw, Entity center) {
+    private void tickCruiseOrbit(ServerLevel serverLevel, Entity center) {
         float step = Math.abs(omega);
         theta += clockwise ? +step : -step;
 
@@ -212,103 +244,97 @@ public class TrainEntity extends Entity implements GeoEntity {
 
         double gx = cx + Math.cos(theta) * radius;
         double gz = cz + Math.sin(theta) * radius;
-        double gy = center.getY(); // 高さは中心に合わせる（好みでHeightmapにしてもOK）
+        double gy = center.getY();
 
-        Vec3d goal = new Vec3d(gx, gy, gz);
-        Vec3d dir = goal.subtract(this.getPos());
+        Vec3 goal = new Vec3(gx, gy, gz);
+        Vec3 dir = goal.subtract(this.position());
 
-        if (dir.lengthSquared() > 1e-6) {
-            this.setVelocity(dir.normalize().multiply(CRUISE_SPEED));
+        if (dir.lengthSqr() > 1.0e-6) {
+            this.setDeltaMovement(dir.normalize().scale(CRUISE_SPEED));
         } else {
-            this.setVelocity(Vec3d.ZERO);
+            this.setDeltaMovement(Vec3.ZERO);
         }
 
-        this.move(MovementType.SELF, this.getVelocity());
+        this.move(MoverType.SELF, this.getDeltaMovement());
 
-        Vec3d v = this.getVelocity();
-        if (v.horizontalLengthSquared() > 1.0e-6) {
-            float yaw = (float)(MathHelper.atan2(v.z, v.x) * (180.0 / Math.PI)) - 90.0f;
+        Vec3 v = this.getDeltaMovement();
+        if (v.horizontalDistanceSqr() > 1.0e-6) {
+            float yaw = (float) (Math.toDegrees(Math.atan2(v.z, v.x)) - 90.0f);
             setYawStableServer(yaw);
         }
     }
 
-    private void tickCharge(ServerWorld sw, Entity target) {
-        Vec3d from = this.getPos();
-        Vec3d to   = target.getPos().add(0, 0.2, 0);
-        Vec3d d    = to.subtract(from);
+    private void tickCharge(ServerLevel serverLevel, Entity target) {
+        Vec3 from = this.position();
+        Vec3 to = target.position().add(0.0, 0.2, 0.0);
+        Vec3 d = to.subtract(from);
 
         if (lifeTicks > SINGLE_CHARGE_MIN_TICKS) {
-            if (tryChargeHit(sw)) {
-                // 合体時は「当たったら突撃フェーズ終了」だけでOK
+            if (tryChargeHit(serverLevel)) {
                 phaseTicks = 0;
                 return;
             }
         }
 
-        // 合体突撃は「到達でフェーズ終了」させてOK
-        if (d.lengthSquared() < 0.65) {
-            phaseTicks = 0; // 次tickで巡航へ
+        if (d.lengthSqr() < 0.65) {
+            phaseTicks = 0;
             return;
         }
 
-        Vec3d v = d.normalize().multiply(CHARGE_SPEED);
-        this.setVelocity(v);
-        this.move(MovementType.SELF, v);
+        Vec3 v = d.normalize().scale(CHARGE_SPEED);
+        this.setDeltaMovement(v);
+        this.move(MoverType.SELF, v);
 
-        if (v.horizontalLengthSquared() > 1.0e-6) {
-            float yaw = (float)(MathHelper.atan2(v.z, v.x) * (180.0 / Math.PI)) - 90.0f;
+        if (v.horizontalDistanceSqr() > 1.0e-6) {
+            float yaw = (float) (Math.toDegrees(Math.atan2(v.z, v.x)) - 90.0f);
             setYawStableServer(yaw);
         }
     }
 
-    private void dropNozomiIfAny(ServerWorld sw) {
+    private void dropNozomiIfAny(ServerLevel serverLevel) {
         if (nozomiPassengerUuid == null) return;
-        Entity p = sw.getEntity(nozomiPassengerUuid);
-        if (p != null && p.getVehicle() == this) p.stopRiding();
+        Entity p = serverLevel.getEntity(nozomiPassengerUuid);
+        if (p != null && p.getVehicle() == this) {
+            p.stopRiding();
+        }
     }
 
-    private void discardWithLinked(ServerWorld sw) {
+    private void discardWithLinked(ServerLevel serverLevel) {
         if (gunTrainUuid != null) {
-            Entity e = sw.getEntity(gunTrainUuid);
+            Entity e = serverLevel.getEntity(gunTrainUuid);
             if (e != null) e.discard();
         }
-        endSkillAndDiscard(sw);
+        endSkillAndDiscard(serverLevel);
     }
 
     @Override
-    protected void updatePassengerPosition(Entity passenger, PositionUpdater updater) {
-        float bodyYaw = this.getYaw();
+    protected void positionRider(Entity passenger, MoveFunction moveFunction) {
+        super.positionRider(passenger, moveFunction);
+
+        float bodyYaw = this.getYRot();
 
         if (passenger instanceof NozomiEntity) {
-            Vec3d seat = getSeatWorldNozomiOnTrain();
-            passenger.refreshPositionAndAngles(seat.x, seat.y, seat.z, bodyYaw, 0.0f);
-
-            passenger.prevYaw = bodyYaw;
-            passenger.setYaw(bodyYaw);
+            Vec3 seat = getSeatWorldNozomiOnTrain();
+            passenger.setPos(seat.x, seat.y, seat.z);
+            passenger.setYRot(bodyYaw);
 
             if (passenger instanceof LivingEntity le) {
-                le.bodyYaw = bodyYaw;
-                le.headYaw = bodyYaw;
-                le.prevBodyYaw = bodyYaw;
-                le.prevHeadYaw = bodyYaw;
+                le.setYBodyRot(bodyYaw);
+                le.setYHeadRot(bodyYaw);
             }
 
-            passenger.noClip = true;
+            passenger.noPhysics = true;
             passenger.setNoGravity(true);
-            passenger.setVelocity(Vec3d.ZERO);
-            passenger.velocityModified = true;
-        } else {
-            // それ以外は親の標準処理
-            super.updatePassengerPosition(passenger, updater);
+            passenger.setDeltaMovement(Vec3.ZERO);
         }
     }
 
-    private boolean isOwnerAlive(ServerWorld sw) {
+    private boolean isOwnerAlive(ServerLevel serverLevel) {
         if (ownerPlayerUuid == null) return false;
 
-        for (NozomiEntity n : sw.getEntitiesByClass(
+        for (NozomiEntity n : serverLevel.getEntitiesOfClass(
                 NozomiEntity.class,
-                this.getBoundingBox().expand(128),
+                this.getBoundingBox().inflate(128.0),
                 e -> e.isAlive()
         )) {
             if (ownerPlayerUuid.equals(n.getOwnerUuid())) return true;
@@ -316,66 +342,90 @@ public class TrainEntity extends Entity implements GeoEntity {
         return false;
     }
 
-    @Override
-    protected void writeCustomDataToNbt(NbtCompound nbt) {
-        if (ownerPlayerUuid != null) nbt.putUuid("OwnerP", ownerPlayerUuid);
-        if (gunTrainUuid != null) nbt.putUuid("Gun", gunTrainUuid);
-        if (targetUuid != null) nbt.putUuid("Target", targetUuid);
-        if (nozomiPassengerUuid != null) nbt.putUuid("NozomiP", nozomiPassengerUuid);
+    private void loadTrainData(CompoundTag tag) {
+        String ownerP = tag.getString("OwnerP").orElse("");
+        ownerPlayerUuid = ownerP.isEmpty() ? null : UUID.fromString(ownerP);
 
-        nbt.putString("Mode", mode.name());
-        nbt.putInt("Life", lifeTicks);
-        nbt.putInt("Phase", phaseTicks);
-        nbt.putBoolean("GunFire", gunFireEnabled);
+        String gun = tag.getString("Gun").orElse("");
+        gunTrainUuid = gun.isEmpty() ? null : UUID.fromString(gun);
 
-        nbt.putFloat("Theta", theta);
-        nbt.putFloat("Radius", radius);
-        nbt.putFloat("Omega", omega);
-        nbt.putBoolean("Clockwise", clockwise);
-    }
+        String target = tag.getString("Target").orElse("");
+        targetUuid = target.isEmpty() ? null : UUID.fromString(target);
 
-    @Override
-    protected void readCustomDataFromNbt(NbtCompound nbt) {
-        if (nbt.containsUuid("OwnerP")) ownerPlayerUuid = nbt.getUuid("OwnerP");
-        if (nbt.containsUuid("Gun")) gunTrainUuid = nbt.getUuid("Gun");
-        if (nbt.containsUuid("Target")) targetUuid = nbt.getUuid("Target");
-        if (nbt.containsUuid("NozomiP")) nozomiPassengerUuid = nbt.getUuid("NozomiP");
+        String nozomiP = tag.getString("NozomiP").orElse("");
+        nozomiPassengerUuid = nozomiP.isEmpty() ? null : UUID.fromString(nozomiP);
 
-        if (nbt.contains("Mode")) {
-            try { mode = TrainMode.valueOf(nbt.getString("Mode")); }
-            catch (Exception ignored) { mode = TrainMode.SINGLE_CHARGE; }
+        String modeName = tag.getString("Mode").orElse("");
+        if (!modeName.isEmpty()) {
+            try {
+                mode = TrainMode.valueOf(modeName);
+            } catch (Exception ignored) {
+                mode = TrainMode.SINGLE_CHARGE;
+            }
         }
-        lifeTicks = nbt.getInt("Life");
-        phaseTicks = nbt.getInt("Phase");
-        gunFireEnabled = nbt.getBoolean("GunFire");
 
-        theta = nbt.getFloat("Theta");
-        radius = nbt.getFloat("Radius");
-        omega = nbt.getFloat("Omega");
-        clockwise = nbt.getBoolean("Clockwise");
+        lifeTicks = tag.getInt("Life").orElse(0);
+        phaseTicks = tag.getInt("Phase").orElse(0);
+        gunFireEnabled = tag.getBoolean("GunFire").orElse(false);
+
+        theta = tag.getFloat("Theta").orElse(0f);
+        radius = tag.getFloat("Radius").orElse(6.0f);
+        omega = tag.getFloat("Omega").orElse(0.12f);
+        clockwise = tag.getBoolean("Clockwise").orElse(true);
     }
 
-    // ===== GeckoLib =====
-    @Override public AnimatableInstanceCache getAnimatableInstanceCache() { return cache; }
+    private void saveTrainData(CompoundTag tag) {
+        if (ownerPlayerUuid != null) {
+            tag.putString("OwnerP", ownerPlayerUuid.toString());
+        }
+        if (gunTrainUuid != null) {
+            tag.putString("Gun", gunTrainUuid.toString());
+        }
+        if (targetUuid != null) {
+            tag.putString("Target", targetUuid.toString());
+        }
+        if (nozomiPassengerUuid != null) {
+            tag.putString("NozomiP", nozomiPassengerUuid.toString());
+        }
+
+        tag.putString("Mode", mode.name());
+        tag.putInt("Life", lifeTicks);
+        tag.putInt("Phase", phaseTicks);
+        tag.putBoolean("GunFire", gunFireEnabled);
+
+        tag.putFloat("Theta", theta);
+        tag.putFloat("Radius", radius);
+        tag.putFloat("Omega", omega);
+        tag.putBoolean("Clockwise", clockwise);
+    }
+
+    @Override
+    public AnimatableInstanceCache getAnimatableInstanceCache() {
+        return cache;
+    }
 
     @Override
     public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
-        controllers.add(new AnimationController<>(this, "controller", 0, state -> {
-            boolean moving = this.getVelocity().horizontalLengthSquared() > 0.0008;
-            state.setAndContinue(moving
-                    ? RawAnimation.begin().thenLoop("animation.go")
-                    : RawAnimation.begin().thenLoop("animation.stop"));
-            return PlayState.CONTINUE;
-        }));
+        controllers.add(new AnimationController<>(
+                "controller",
+                0,
+                state -> {
+                    boolean moving = this.getDeltaMovement().horizontalDistanceSqr() > 0.0008;
+                    state.setAnimation(
+                            moving
+                                    ? RawAnimation.begin().thenLoop("animation.go")
+                                    : RawAnimation.begin().thenLoop("animation.stop")
+                    );
+                    return PlayState.CONTINUE;
+                }
+        ));
     }
 
-    private void endSkillAndDiscard(ServerWorld sw) {
-        // ノゾミを降ろす
-        dropNozomiIfAny(sw);
+    private void endSkillAndDiscard(ServerLevel serverLevel) {
+        dropNozomiIfAny(serverLevel);
 
-        // クールタイム開始＆アニメ解除
         if (nozomiPassengerUuid != null) {
-            Entity p = sw.getEntity(nozomiPassengerUuid);
+            Entity p = serverLevel.getEntity(nozomiPassengerUuid);
             if (p instanceof NozomiEntity n && n.isAlive()) {
                 n.setTrainSkillActive(false);
                 n.startTrainCooldown();
@@ -384,67 +434,60 @@ public class TrainEntity extends Entity implements GeoEntity {
         this.discard();
     }
 
-    private boolean tryChargeHit(ServerWorld sw) {
-        // ★ Train自身の bounding box を使わない。位置中心の Box を作る
-        Vec3d c = this.getPos();
-        Box box = new Box(c, c).expand(CHARGE_HIT_RADIUS, 1.6, CHARGE_HIT_RADIUS);
+    private boolean tryChargeHit(ServerLevel serverLevel) {
+        Vec3 c = this.position();
+        AABB box = new AABB(c, c).inflate(CHARGE_HIT_RADIUS, 1.6, CHARGE_HIT_RADIUS);
 
-        var list = sw.getEntitiesByClass(net.minecraft.entity.mob.HostileEntity.class, box, LivingEntity::isAlive);
+        var list = serverLevel.getEntitiesOfClass(Monster.class, box, LivingEntity::isAlive);
         if (list.isEmpty()) return false;
 
-        // 一番近い敵
-        net.minecraft.entity.mob.HostileEntity best = null;
-        double bestD2 = 1e18;
+        Monster best = null;
+        double bestD2 = Double.MAX_VALUE;
         for (var h : list) {
-            // 乗客(ノゾミ)を巻き込まない（Hostile限定なら不要だけど保険）
-            if (nozomiPassengerUuid != null && h.getUuid().equals(nozomiPassengerUuid)) continue;
+            if (nozomiPassengerUuid != null && h.getUUID().equals(nozomiPassengerUuid)) continue;
 
-            double d2 = h.squaredDistanceTo(c);
-            if (d2 < bestD2) { bestD2 = d2; best = h; }
+            double d2 = h.distanceToSqr(c);
+            if (d2 < bestD2) {
+                bestD2 = d2;
+                best = h;
+            }
         }
         if (best == null) return false;
 
-        // ★ダメージ（magicで無効化されるケースがあるので generic に）
-        best.damage(sw.getDamageSources().generic(), CHARGE_DAMAGE);
+        best.hurt(serverLevel.damageSources().source(DamageTypes.MOB_ATTACK, this), CHARGE_DAMAGE);
 
-        // ★ノックバック：takeKnockback を使う（addVelocityより反映が確実）
-        Vec3d push = best.getPos().subtract(c);
-        if (push.horizontalLengthSquared() < 1.0e-6) push = new Vec3d(0, 0, 1);
-        Vec3d dir = new Vec3d(push.x, 0, push.z).normalize();
+        Vec3 push = best.position().subtract(c);
+        if (push.horizontalDistanceSqr() < 1.0e-6) push = new Vec3(0, 0, 1);
+        Vec3 dir = new Vec3(push.x, 0, push.z).normalize();
 
-        best.takeKnockback((float)KNOCKBACK_H, -dir.x, -dir.z); // takeKnockbackは「押される向き」の指定が直感と逆になりがち
-        best.addVelocity(0.0, KNOCKBACK_Y, 0.0);
-        best.velocityModified = true;
+        best.knockback((float) KNOCKBACK_H, -dir.x, -dir.z);
+        best.setDeltaMovement(best.getDeltaMovement().add(0.0, KNOCKBACK_Y, 0.0));
 
         return true;
     }
-    // Trainの前方/右方向ベクトル
-    private static Vec3d forwardFromYaw(float yawDeg) {
-        float r = yawDeg * MathHelper.RADIANS_PER_DEGREE;
-        return new Vec3d(-MathHelper.sin(r), 0, MathHelper.cos(r));
+
+    private static Vec3 forwardFromYaw(float yawDeg) {
+        float r = yawDeg * ((float) Math.PI / 180.0f);
+        return new Vec3(-Mth.sin(r), 0.0, Mth.cos(r));
     }
 
-    private Vec3d getSeatWorldNozomiOnTrain() {
-        Vec3d forward = forwardFromYaw(this.getYaw()).normalize();
-        Vec3d right = forward.crossProduct(new Vec3d(0, 1, 0)).normalize();
+    private Vec3 getSeatWorldNozomiOnTrain() {
+        Vec3 forward = forwardFromYaw(this.getYRot()).normalize();
+        Vec3 right = forward.cross(new Vec3(0, 1, 0)).normalize();
 
-        // ★ノゾミ座席：中央ちょい上・少し後ろ（好みで調整）
-        return this.getPos()
-                .add(0, 0.90, 0)
-                .add(forward.multiply(-0.10))
-                .add(right.multiply(0.00));
+        return this.position()
+                .add(0.0, 0.90, 0.0)
+                .add(forward.scale(-0.10))
+                .add(right.scale(0.00));
     }
 
-    private Vec3d getSeatWorldGunOnTrain() {
-        Vec3d forward = forwardFromYaw(this.getYaw()).normalize();
-        Vec3d right = forward.crossProduct(new Vec3d(0, 1, 0)).normalize();
+    private Vec3 getSeatWorldGunOnTrain() {
+        Vec3 forward = forwardFromYaw(this.getYRot()).normalize();
+        Vec3 right = forward.cross(new Vec3(0, 1, 0)).normalize();
 
-        // ★GunTrain座席：Trainの右側に配置（重なり防止）
-        // ここを調整すると「重なってる」が一発で直ります
-        return this.getPos()
-                .add(0, 0.65, 0)
-                .add(forward.multiply(0.05))
-                .add(right.multiply(+1.10));
+        return this.position()
+                .add(0.0, 0.65, 0.0)
+                .add(forward.scale(0.05))
+                .add(right.scale(1.10));
     }
-
 }

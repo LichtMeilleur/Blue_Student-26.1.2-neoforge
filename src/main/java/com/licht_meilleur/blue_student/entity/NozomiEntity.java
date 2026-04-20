@@ -1,69 +1,79 @@
 package com.licht_meilleur.blue_student.entity;
 
-import com.licht_meilleur.blue_student.ai.*;
+import com.geckolib.animation.RawAnimation;
+import com.licht_meilleur.blue_student.ai.StudentAimGoal;
+import com.licht_meilleur.blue_student.ai.StudentCombatGoal;
+import com.licht_meilleur.blue_student.ai.StudentEatGoal;
+import com.licht_meilleur.blue_student.ai.StudentEvadeGoal;
+import com.licht_meilleur.blue_student.ai.StudentFollowGoal;
+import com.licht_meilleur.blue_student.ai.StudentReturnToOwnerGoal;
+import com.licht_meilleur.blue_student.ai.StudentRideWithOwnerGoal;
+import com.licht_meilleur.blue_student.ai.StudentSecurityGoal;
+import com.licht_meilleur.blue_student.ai.StudentStuckEscapeGoal;
 import com.licht_meilleur.blue_student.ai.only.NozomiHikariMergeGoGoTrainGoal;
 import com.licht_meilleur.blue_student.ai.only.NozomiTrainGoal;
 import com.licht_meilleur.blue_student.bed.BedLinkManager;
-import com.licht_meilleur.blue_student.student.StudentAiMode;
 import com.licht_meilleur.blue_student.student.StudentId;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.ai.goal.EscapeDangerGoal;
-import net.minecraft.entity.ai.goal.SwimGoal;
-import net.minecraft.entity.data.DataTracker;
-import net.minecraft.entity.data.TrackedData;
-import net.minecraft.entity.data.TrackedDataHandlerRegistry;
-import net.minecraft.entity.mob.HostileEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
-import software.bernie.geckolib.core.animation.RawAnimation;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.ai.goal.AvoidEntityGoal;
+import net.minecraft.world.entity.ai.goal.FloatGoal;
+import net.minecraft.world.entity.ai.goal.PanicGoal;
+import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+
+import java.util.UUID;
 
 public class NozomiEntity extends AbstractStudentEntity {
 
-    private static final TrackedData<StudentAiMode> AI_MODE =
-            DataTracker.registerData(NozomiEntity.class, StudentAiMode.TRACKED);
+    private static final EntityDataAccessor<Integer> AI_MODE =
+            SynchedEntityData.defineId(NozomiEntity.class, EntityDataSerializers.INT);
 
-    // ★あなたの animation.json のキーに合わせて変更してください
     public static final String ANIM_TRAIN = "animation.model.train";
     private static final RawAnimation TRAIN_LOOP =
             RawAnimation.begin().thenLoop(ANIM_TRAIN);
 
-    private static final TrackedData<Boolean> TRAIN_ACTIVE =
-            DataTracker.registerData(NozomiEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
-
+    private static final EntityDataAccessor<Boolean> TRAIN_ACTIVE =
+            SynchedEntityData.defineId(NozomiEntity.class, EntityDataSerializers.BOOLEAN);
 
     private int trainSkillCooldown = 0;
-    private static final int TRAIN_COOLDOWN_MAX = 20 * 12; // 12秒（好みで）
+    private static final int TRAIN_COOLDOWN_MAX = 20 * 12;
 
     private int unisonCooldown = 0;
     private static final int UNISON_COOLDOWN_MAX = 20 * 12;
 
-    public NozomiEntity(EntityType<? extends AbstractStudentEntity> type, World world) {
-        super(type, world);
+    public NozomiEntity(EntityType<? extends AbstractStudentEntity> type, Level level) {
+        super(type, level);
     }
 
     @Override
-    protected void initDataTracker() {
-        super.initDataTracker();
-        this.dataTracker.startTracking(TRAIN_ACTIVE, false);
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        super.defineSynchedData(builder);
+        builder.define(TRAIN_ACTIVE, false);
     }
+
     @Override
     public void stopRiding() {
         super.stopRiding();
-        this.noClip = false;
+        this.noPhysics = false;
         this.setNoGravity(false);
     }
 
     public void setTrainSkillActive(boolean active) {
-        if (this.getWorld().isClient) return;
-        this.dataTracker.set(TRAIN_ACTIVE, active);
+        if (this.level().isClientSide()) return;
+        this.entityData.set(TRAIN_ACTIVE, active);
     }
 
     public boolean isTrainSkillActive() {
-        return this.dataTracker.get(TRAIN_ACTIVE);
+        return this.entityData.get(TRAIN_ACTIVE);
     }
 
     @Override
@@ -71,73 +81,89 @@ public class NozomiEntity extends AbstractStudentEntity {
         if (isTrainSkillActive()) return TRAIN_LOOP;
         return null;
     }
+
     @Override
     public StudentId getStudentId() {
-        return StudentId.NOZOMI; // ★ここ重要（MARIEのままになってた）
+        return StudentId.NOZOMI;
     }
 
     @Override
-    protected TrackedData<StudentAiMode> getAiModeTrackedData() {
+    protected EntityDataAccessor<Integer> getAiModeTrackedData() {
         return AI_MODE;
     }
 
     @Override
-    public ActionResult interactMob(PlayerEntity player, Hand hand) {
-        if (this.getWorld().isClient) return ActionResult.SUCCESS;
-
-        if (ownerUuid == null) setOwnerUuid(player.getUuid());
-        if (!player.getUuid().equals(ownerUuid)) return ActionResult.PASS;
-
-        ItemStack inHand = player.getStackInHand(hand);
-
-        if (player.isSneaking() && inHand.isEmpty()) {
-            BedLinkManager.setLinking(player.getUuid(), StudentId.NOZOMI);
-            player.sendMessage(net.minecraft.text.Text.translatable("msg.blue_student.link_mode", "nozomi"), false);
-            return ActionResult.CONSUME;
+    protected InteractionResult mobInteract(Player player, InteractionHand hand) {
+        if (this.level().isClientSide()) {
+            return InteractionResult.SUCCESS;
         }
 
-        return super.interactMob(player, hand);
+        UUID owner = getOwnerUuid();
+        if (owner == null) {
+            setOwnerUuid(player.getUUID());
+            owner = player.getUUID();
+        }
+
+        if (!player.getUUID().equals(owner)) {
+            return InteractionResult.CONSUME;
+        }
+
+        ItemStack inHand = player.getItemInHand(hand);
+
+        if (player.isShiftKeyDown() && inHand.isEmpty()) {
+            BedLinkManager.setLinking(player.getUUID(), StudentId.NOZOMI);
+            player.sendSystemMessage(Component.translatable("msg.blue_student.link_mode", "nozomi"));
+            return InteractionResult.CONSUME;
+        }
+
+        return super.mobInteract(player, hand);
     }
 
     @Override
-    protected void initGoals() {
-        this.goalSelector.add(0, new StudentRideWithOwnerGoal(this, this));
-        this.goalSelector.add(1, new SwimGoal(this));
+    protected void registerGoals() {
+        this.goalSelector.addGoal(0, new StudentRideWithOwnerGoal(this, this));
+        this.goalSelector.addGoal(1, new FloatGoal(this));
 
-        this.goalSelector.add(2, new NozomiHikariMergeGoGoTrainGoal(this));
-        this.goalSelector.add(3, new NozomiTrainGoal(this));
+        this.goalSelector.addGoal(2, new NozomiHikariMergeGoGoTrainGoal(this));
+        this.goalSelector.addGoal(3, new NozomiTrainGoal(this));
 
-        this.goalSelector.add(4, new StudentAimGoal(this, this));
-        this.goalSelector.add(5, new StudentStuckEscapeGoal(this, this));
-        this.goalSelector.add(6, new StudentEvadeGoal(this, this));
-        this.goalSelector.add(7, new EscapeDangerGoal(this, 1.25));
-
-        this.goalSelector.add(8, new StudentReturnToOwnerGoal(this, this, 1.35, 28.0, 2.5, 48.0, 20));
-
-        this.goalSelector.add(9, new net.minecraft.entity.ai.goal.FleeEntityGoal<>(this, HostileEntity.class, 8.0f, 1.0, 1.35));
-
-        this.goalSelector.add(10, new StudentCombatGoal(this, this));
-
-        this.goalSelector.add(11, new StudentFollowGoal(this, this, 1.1));
-        this.goalSelector.add(12, new StudentSecurityGoal(this, this,
+        this.goalSelector.addGoal(4, new StudentAimGoal(this, this));
+        this.goalSelector.addGoal(5, new StudentStuckEscapeGoal(this, this));
+        this.goalSelector.addGoal(6, new StudentEvadeGoal(this, this));
+        this.goalSelector.addGoal(7, new PanicGoal(this, 1.25));
+        this.goalSelector.addGoal(8, new StudentReturnToOwnerGoal(this, this, 1.35, 28.0, 2.5, 48.0, 20));
+        this.goalSelector.addGoal(9, new AvoidEntityGoal<>(this, Monster.class, 8.0f, 1.0, 1.35));
+        this.goalSelector.addGoal(10, new StudentCombatGoal(this, this));
+        this.goalSelector.addGoal(11, new StudentFollowGoal(this, this, 1.1));
+        this.goalSelector.addGoal(12, new StudentSecurityGoal(this, this,
                 new StudentSecurityGoal.ISecurityPosProvider() {
-                    @Override public BlockPos getSecurityPos() { return NozomiEntity.this.getSecurityPos(); }
-                    @Override public void setSecurityPos(BlockPos pos) { NozomiEntity.this.setSecurityPos(pos); }
+                    @Override
+                    public BlockPos getSecurityPos() {
+                        return NozomiEntity.this.getSecurityPos();
+                    }
+
+                    @Override
+                    public void setSecurityPos(BlockPos pos) {
+                        NozomiEntity.this.setSecurityPos(pos);
+                    }
                 },
                 1.0));
-        this.goalSelector.add(13, new StudentEatGoal(this, this));
+        this.goalSelector.addGoal(13, new StudentEatGoal(this, this));
     }
+
     @Override
     public void tick() {
         super.tick();
 
-        if (!this.getWorld().isClient) {
+        if (!this.level().isClientSide()) {
             if (unisonCooldown > 0) unisonCooldown--;
         }
-        if (!this.getWorld().isClient) {
+
+        if (!this.level().isClientSide()) {
             if (trainSkillCooldown > 0) trainSkillCooldown--;
         }
     }
+
     public boolean canUseTrainSkill() {
         return trainSkillCooldown <= 0;
     }

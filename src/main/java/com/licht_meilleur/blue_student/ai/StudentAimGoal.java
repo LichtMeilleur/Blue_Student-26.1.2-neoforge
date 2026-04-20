@@ -2,21 +2,31 @@ package com.licht_meilleur.blue_student.ai;
 
 import com.licht_meilleur.blue_student.entity.AbstractStudentEntity;
 import com.licht_meilleur.blue_student.entity.HikariEntity;
+import com.licht_meilleur.blue_student.entity.HinaEntity;
 import com.licht_meilleur.blue_student.entity.NozomiEntity;
-import com.licht_meilleur.blue_student.student.*;
-import com.licht_meilleur.blue_student.weapon.*;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.ai.goal.Goal;
-import net.minecraft.entity.mob.PathAwareEntity;
-import net.minecraft.entity.ai.pathing.Path;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
+import com.licht_meilleur.blue_student.student.IStudentEntity;
+import com.licht_meilleur.blue_student.student.LookRequest;
+import com.licht_meilleur.blue_student.student.StudentAiMode;
+import com.licht_meilleur.blue_student.student.StudentBrAction;
+import com.licht_meilleur.blue_student.student.StudentForm;
+import com.licht_meilleur.blue_student.weapon.HitscanWeaponAction;
+import com.licht_meilleur.blue_student.weapon.ProjectileWeaponAction;
+import com.licht_meilleur.blue_student.weapon.ShotgunHitscanWeaponAction;
+import com.licht_meilleur.blue_student.weapon.WeaponAction;
+import com.licht_meilleur.blue_student.weapon.WeaponSpec;
+import com.licht_meilleur.blue_student.weapon.WeaponSpecs;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.PathfinderMob;
+import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.level.pathfinder.Path;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.EnumSet;
 
 public class StudentAimGoal extends Goal {
 
-    private final PathAwareEntity mob;
+    private final PathfinderMob mob;
     private final IStudentEntity student;
 
     private final WeaponAction projectileAction = new ProjectileWeaponAction();
@@ -29,42 +39,31 @@ public class StudentAimGoal extends Goal {
 
     private static final int AIM_TICKS = 1;
 
-
     private LookRequest activeLook;
 
-    public StudentAimGoal(PathAwareEntity mob, IStudentEntity student) {
+    public StudentAimGoal(PathfinderMob mob, IStudentEntity student) {
         this.mob = mob;
         this.student = student;
-        this.setControls(EnumSet.of(Control.LOOK));
+        this.setFlags(EnumSet.of(Flag.LOOK));
     }
 
-
     @Override
-    public boolean canStart() {
+    public boolean canUse() {
         StudentAiMode mode = student.getAiMode();
         if (mode == StudentAiMode.FOLLOW || mode == StudentAiMode.SECURITY) return true;
 
-        // ★単体スキル中もAimGoalを動かす
         if (mob instanceof NozomiEntity n && n.isTrainSkillActive()) return true;
 
         return false;
     }
 
     @Override
-    public boolean shouldContinue() {
-        return canStart();
+    public boolean canContinueToUse() {
+        return canUse();
     }
 
     @Override
     public void tick() {
-
-
-
-
-
-        // =========================
-        // 0) 回避中は一切触らない
-        // =========================
         if (student.isEvading()) {
             fireTarget = null;
             aimTicks = 0;
@@ -72,9 +71,6 @@ public class StudentAimGoal extends Goal {
             return;
         }
 
-        // =========================
-        // 1) LookRequest取り込み
-        // =========================
         LookRequest incoming = student.consumeLookRequest();
         if (incoming != null) {
             if (activeLook == null || incoming.priority >= activeLook.priority) {
@@ -82,43 +78,30 @@ public class StudentAimGoal extends Goal {
             }
         }
 
-
-
-
-
-// =========================
-// 2) 射撃キュー取得（チャンネル）
-// =========================
         if (fireTarget == null) {
-
-            // ---- BRは「欲しいチャンネルだけ消費」＆DODGE中はMAINのみ ----
             if (mob instanceof AbstractStudentEntity ase && ase.getForm() == StudentForm.BR) {
-
                 StudentBrAction a = ase.getBrActionServer();
                 boolean dodge = (a == StudentBrAction.DODGE_SHOT);
 
                 IStudentEntity.FireChannel desired = IStudentEntity.FireChannel.MAIN;
 
                 if (!dodge && a != null && a.shotKind == IStudentEntity.ShotKind.SUB) {
-                    // いまはSUB=SUB_L扱い（AliceでSUB_Rを足すのは後）
                     desired = IStudentEntity.FireChannel.SUB_L;
                 }
 
                 LivingEntity t = null;
 
                 if (dodge) {
-                    // DODGE中はMAINのみ
                     if (student.hasQueuedFire(IStudentEntity.FireChannel.MAIN)) {
                         t = student.consumeQueuedFireTarget(IStudentEntity.FireChannel.MAIN);
                     }
                     if (t != null && t.isAlive()) {
                         fireTarget = t;
                         fireChannel = IStudentEntity.FireChannel.MAIN;
-                        aimTicks = 0; // BR即発射
+                        aimTicks = 0;
                         stopNavigationIfNeeded();
                     }
                 } else {
-                    // BRは「欲しい方だけ」消費（反対を勝手に食わない）
                     if (student.hasQueuedFire(desired)) {
                         t = student.consumeQueuedFireTarget(desired);
                     }
@@ -126,15 +109,11 @@ public class StudentAimGoal extends Goal {
                     if (t != null && t.isAlive()) {
                         fireTarget = t;
                         fireChannel = desired;
-                        aimTicks = 0; // BR即発射
+                        aimTicks = 0;
                         stopNavigationIfNeeded();
                     }
                 }
-
-                // 欲しい方が無いなら何もしない
-
             } else {
-                // ---- 通常フォーム：SUB優先→MAIN（好みで順序変更可） ----
                 LivingEntity t = null;
 
                 if (student.hasQueuedFire(IStudentEntity.FireChannel.SUB_L)) {
@@ -165,9 +144,6 @@ public class StudentAimGoal extends Goal {
             }
         }
 
-        // =========================
-        // 3) どこを見るか決定
-        // =========================
         AimResult aim = null;
 
         if (activeLook != null) {
@@ -182,20 +158,18 @@ public class StudentAimGoal extends Goal {
             aim = computeAimMoveDir();
         }
 
-        // =========================
-        // 4) 適用
-        // =========================
         if (aim != null) {
-            mob.getLookControl().lookAt(aim.x, aim.y, aim.z, 90f, 90f);
+            mob.getLookControl().setLookAt(aim.x, aim.y, aim.z, 90f, 90f);
 
             if (mob instanceof AbstractStudentEntity se) {
                 se.setAimAngles(aim.yaw, aim.pitch);
 
                 boolean lockBody = se.shouldLockBodyYawToMoveDir();
                 if (!lockBody) {
-                    mob.setYaw(approachAngle(mob.getYaw(), aim.yaw, 35f));
-                    mob.bodyYaw = mob.getYaw();
-                    mob.headYaw = mob.getYaw();
+                    float newYaw = approachAngle(mob.getYRot(), aim.yaw, 35f);
+                    mob.setYRot(newYaw);
+                    mob.yBodyRot = newYaw;
+                    mob.yHeadRot = newYaw;
                 }
             }
         }
@@ -205,55 +179,38 @@ public class StudentAimGoal extends Goal {
             if (activeLook.holdTicks <= 0) activeLook = null;
         }
 
-
-
-
-
-
-        // 6) 実射撃
         if (fireTarget == null) return;
 
         aimTicks--;
         if (aimTicks > 0) return;
 
-// form確定
         StudentForm form = StudentForm.NORMAL;
         if (mob instanceof AbstractStudentEntity ase) {
             form = ase.getForm();
         }
-// ch はこの少し上で定義してる fireChannel を使う
+
         final IStudentEntity.FireChannel ch = fireChannel;
         final boolean isSubShot = (ch != IStudentEntity.FireChannel.MAIN);
 
+        final WeaponSpec spec = WeaponSpecs.forStudent(student.getStudentId(), form, fireChannel);
 
-
-
-// ★ここを修正
-        final WeaponSpec spec =
-                WeaponSpecs.forStudent(student.getStudentId(), form, fireChannel);
-
-// 射程＆視界チェック
         double dist = mob.distanceTo(fireTarget);
-        boolean canSee = mob.getVisibilityCache().canSee(fireTarget);
+        boolean canSee = mob.getSensing().hasLineOfSight(fireTarget);
 
-// ★スキル中は少し緩める（列車移動/座席固定でブレるため）
         boolean skillAim =
                 (mob instanceof NozomiEntity n && n.isTrainSkillActive()) ||
                         (mob instanceof HikariEntity h && h.isGunTrainSkillActive());
 
-        double maxRange = spec.range + (skillAim ? 8.0 : 0.0); // 好みで +4〜+12
+        double maxRange = spec.range + (skillAim ? 8.0 : 0.0);
 
         if ((!canSee && !skillAim) || dist > maxRange) {
             fireTarget = null;
             return;
         }
 
-// 顔向け
         if (mob instanceof AbstractStudentEntity se) {
             se.faceTargetForShot(fireTarget, 35f, 25f);
         }
-
-// 発射
 
         boolean fired;
         if (spec.fxType == WeaponSpec.FxType.SHOTGUN) {
@@ -265,10 +222,7 @@ public class StudentAimGoal extends Goal {
             };
         }
 
-
-
         if (fired) {
-
             student.requestShot(
                     isSubShot ? IStudentEntity.ShotKind.SUB : IStudentEntity.ShotKind.MAIN,
                     fireTarget
@@ -279,13 +233,9 @@ public class StudentAimGoal extends Goal {
         fireTarget = null;
     }
 
-    // ============================================
-    // ナビ停止制御（フォーム依存）
-    // ============================================
     private void stopNavigationIfNeeded() {
-
         boolean flying = false;
-        if (mob instanceof com.licht_meilleur.blue_student.entity.HinaEntity hina) {
+        if (mob instanceof HinaEntity hina) {
             flying = hina.isFlying();
         }
 
@@ -301,25 +251,22 @@ public class StudentAimGoal extends Goal {
         }
     }
 
-    // ============================================
-    // 通常：移動方向を見る
-    // ============================================
     private AimResult computeAimMoveDir() {
-        Vec3d v = mob.getVelocity();
-        Vec3d hv = new Vec3d(v.x, 0, v.z);
+        Vec3 v = mob.getDeltaMovement();
+        Vec3 hv = new Vec3(v.x, 0, v.z);
 
-        if (hv.lengthSquared() > 1.0e-5) {
-            Vec3d p = mob.getPos().add(hv.normalize().multiply(2.0));
+        if (hv.lengthSqr() > 1.0e-5) {
+            Vec3 p = mob.position().add(hv.normalize().scale(2.0));
             return aimAt(p.x, mob.getEyeY(), p.z);
         }
 
-        if (!mob.getNavigation().isIdle()) {
-            Path path = mob.getNavigation().getCurrentPath();
-            if (path != null && !path.isFinished()) {
-                int idx = path.getCurrentNodeIndex();
-                if (idx < path.getLength()) {
+        if (!mob.getNavigation().isDone()) {
+            Path path = mob.getNavigation().getPath();
+            if (path != null && !path.isDone()) {
+                int idx = path.getNextNodeIndex();
+                if (idx < path.getNodeCount()) {
                     var nodePos = path.getNodePos(idx);
-                    Vec3d p = new Vec3d(
+                    Vec3 p = new Vec3(
                             nodePos.getX() + 0.5,
                             nodePos.getY() + 0.5,
                             nodePos.getZ() + 0.5
@@ -336,7 +283,6 @@ public class StudentAimGoal extends Goal {
         if (r == null) return null;
 
         return switch (r.type) {
-
             case NONE -> null;
 
             case TARGET -> {
@@ -368,7 +314,7 @@ public class StudentAimGoal extends Goal {
     }
 
     private float approachAngle(float cur, float target, float maxStep) {
-        float delta = MathHelper.wrapDegrees(target - cur);
+        float delta = Mth.wrapDegrees(target - cur);
         if (delta > maxStep) delta = maxStep;
         if (delta < -maxStep) delta = -maxStep;
         return cur + delta;

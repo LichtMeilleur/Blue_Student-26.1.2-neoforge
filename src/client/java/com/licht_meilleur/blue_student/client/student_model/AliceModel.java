@@ -1,29 +1,36 @@
 package com.licht_meilleur.blue_student.client.student_model;
 
+import com.geckolib.renderer.base.GeoRenderState;
 import com.licht_meilleur.blue_student.BlueStudentMod;
+import com.licht_meilleur.blue_student.client.BaseStudentModel;
+import com.licht_meilleur.blue_student.client.StudentRenderTickets;
 import com.licht_meilleur.blue_student.entity.AliceEntity;
-import com.licht_meilleur.blue_student.entity.HoshinoEntity;
 import com.licht_meilleur.blue_student.student.StudentForm;
-import net.minecraft.util.Identifier;
-import software.bernie.geckolib.constant.DataTickets;
-import software.bernie.geckolib.core.animatable.model.CoreGeoBone;
-import software.bernie.geckolib.core.animation.AnimationState;
-import software.bernie.geckolib.model.GeoModel;
-import software.bernie.geckolib.model.data.EntityModelData;
+import net.minecraft.resources.Identifier;
 
-public class AliceModel extends GeoModel<AliceEntity> {
+public class AliceModel extends BaseStudentModel<AliceEntity> {
 
-    @Override
-    public Identifier getModelResource(AliceEntity animatable) {
-        if (animatable.getForm() == StudentForm.BR) {
-            return BlueStudentMod.id("geo/alice_br.geo.json");
-        }
-        return BlueStudentMod.id("geo/alice.geo.json");
+    public AliceModel() {
+        super(
+                "geo/alice",
+                "textures/entity/alice.png",
+                "animations/alice.animation.json"
+        );
     }
 
     @Override
-    public Identifier getTextureResource(AliceEntity animatable) {
-        if (animatable.getForm() == StudentForm.BR) {
+    public Identifier getModelResource(GeoRenderState renderState) {
+        StudentForm form = renderState.getOrDefaultGeckolibData(StudentRenderTickets.FORM, StudentForm.NORMAL);
+        if (form == StudentForm.BR) {
+            return BlueStudentMod.id("alice_br");
+        }
+        return BlueStudentMod.id("alice");
+    }
+
+    @Override
+    public Identifier getTextureResource(GeoRenderState renderState) {
+        StudentForm form = renderState.getOrDefaultGeckolibData(StudentRenderTickets.FORM, StudentForm.NORMAL);
+        if (form == StudentForm.BR) {
             return BlueStudentMod.id("textures/entity/alice_br.png");
         }
         return BlueStudentMod.id("textures/entity/alice.png");
@@ -31,51 +38,9 @@ public class AliceModel extends GeoModel<AliceEntity> {
 
     @Override
     public Identifier getAnimationResource(AliceEntity animatable) {
-        if (animatable.getForm() == StudentForm.BR) {
-            return BlueStudentMod.id("animations/alice_br.animation.json");
+        if (animatable.getRenderForm() == StudentForm.BR) {
+            return BlueStudentMod.id("alice_br");
         }
-        return BlueStudentMod.id("animations/alice.animation.json");
+        return BlueStudentMod.id("alice");
     }
-
-    @Override
-    public void setCustomAnimations(AliceEntity animatable, long instanceId, AnimationState<AliceEntity> animationState) {
-        super.setCustomAnimations(animatable, instanceId, animationState);
-
-        CoreGeoBone head = this.getAnimationProcessor().getBone("Head");
-        CoreGeoBone arm  = this.getAnimationProcessor().getBone("Arm");
-
-        EntityModelData data = animationState.getData(DataTickets.ENTITY_MODEL_DATA);
-        if (data == null) return;
-
-        // --- 角度（度）を先にclampしてからラジアンへ ---
-        // 頭：左右±60°, 上30°/下40°
-        float headYawDeg   = clamp(data.netHeadYaw(), -60f, 60f);
-        float headPitchDeg = clamp(data.headPitch(), -40f, 30f);
-
-        // 腕：左右±35°, 上45°/下20°（銃っぽい範囲）
-        float armYawDeg    = clamp(data.netHeadYaw(), -35f, 35f);
-        float armPitchDeg  = clamp(data.headPitch(), -45f, 45f);
-
-        float headPitchRad = degToRad(headPitchDeg);
-        float headYawRad   = degToRad(headYawDeg);
-        float armPitchRad  = degToRad(armPitchDeg);
-        float armYawRad    = degToRad(armYawDeg);
-
-        if (head != null) {
-            head.setRotX(headPitchRad * 0.5f);
-            head.setRotY(headYawRad   * 0.5f);
-        }
-        if (arm != null) {
-            arm.setRotX(armPitchRad * 0.9f);
-            arm.setRotY(armYawRad   * 0.2f);
-        }
-    }
-
-    private static float degToRad(float deg) {
-        return deg * ((float)Math.PI / 180F);
-    }
-    private static float clamp(float v, float min, float max) {
-        return Math.max(min, Math.min(max, v));
-    }
-
 }

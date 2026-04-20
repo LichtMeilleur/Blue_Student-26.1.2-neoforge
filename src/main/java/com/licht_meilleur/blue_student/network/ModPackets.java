@@ -1,323 +1,416 @@
 package com.licht_meilleur.blue_student.network;
 
 import com.licht_meilleur.blue_student.BlueStudentMod;
+import com.licht_meilleur.blue_student.block.entity.CraftChamberBlockEntity;
+import com.licht_meilleur.blue_student.craft_chamber.CraftChamberRecipes;
+import com.licht_meilleur.blue_student.entity.AbstractStudentEntity;
+import com.licht_meilleur.blue_student.entity.AliceEntity;
+import com.licht_meilleur.blue_student.entity.HikariEntity;
+import com.licht_meilleur.blue_student.entity.HinaEntity;
+import com.licht_meilleur.blue_student.entity.HoshinoEntity;
+import com.licht_meilleur.blue_student.entity.KisakiEntity;
+import com.licht_meilleur.blue_student.entity.MarieEntity;
+import com.licht_meilleur.blue_student.entity.NozomiEntity;
 import com.licht_meilleur.blue_student.entity.ShirokoEntity;
 import com.licht_meilleur.blue_student.state.StudentWorldState;
+import com.licht_meilleur.blue_student.student.IStudentEntity;
 import com.licht_meilleur.blue_student.student.StudentAiMode;
 import com.licht_meilleur.blue_student.student.StudentId;
+import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import com.licht_meilleur.blue_student.student.IStudentEntity;
-import net.minecraft.entity.Entity;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
 
+import java.util.List;
 import java.util.UUID;
 
-public class ModPackets {
-    static {
-        System.out.println("[BlueStudent] ModPackets class loaded");
-        BlueStudentMod.LOGGER.info("[BlueStudent] ModPackets class loaded");
+public final class ModPackets {
+
+    private ModPackets() {
     }
-    public static final Identifier SET_AI_MODE  = BlueStudentMod.id("set_ai_mode");
-    public static final Identifier CALL_STUDENT = BlueStudentMod.id("call_student");
-    public static final Identifier CALL_BACK_STUDENT = BlueStudentMod.id("call_back_student");
-    public static final Identifier CRAFT_CHAMBER_CRAFT = BlueStudentMod.id("craft_chamber_craft");
-    public static final Identifier S2C_SHOT_FX = BlueStudentMod.id("s2c_shot_fx");
-    // ★ 64にしたければ 64 にする
+
     private static final int COST_DIAMOND = 64;
 
+    public static final StreamCodec<RegistryFriendlyByteBuf, BlockPos> BLOCK_POS_CODEC =
+            new StreamCodec<>() {
+                @Override
+                public BlockPos decode(RegistryFriendlyByteBuf buf) {
+                    return buf.readBlockPos();
+                }
+
+                @Override
+                public void encode(RegistryFriendlyByteBuf buf, BlockPos value) {
+                    buf.writeBlockPos(value);
+                }
+            };
+
+    public static final StreamCodec<RegistryFriendlyByteBuf, Vec3> VEC3_CODEC =
+            StreamCodec.composite(
+                    ByteBufCodecs.DOUBLE, Vec3::x,
+                    ByteBufCodecs.DOUBLE, Vec3::y,
+                    ByteBufCodecs.DOUBLE, Vec3::z,
+                    Vec3::new
+            );
+
+    public record SetAiModePayload(int entityId, int modeId) implements CustomPacketPayload {
+        public static final Identifier ID = BlueStudentMod.id("set_ai_mode");
+        public static final Type<SetAiModePayload> TYPE = new Type<>(ID);
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, SetAiModePayload> CODEC =
+                StreamCodec.composite(
+                        ByteBufCodecs.INT, SetAiModePayload::entityId,
+                        ByteBufCodecs.INT, SetAiModePayload::modeId,
+                        SetAiModePayload::new
+                );
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    public record CallStudentPayload(String studentId, BlockPos tabletPos) implements CustomPacketPayload {
+        public static final Identifier ID = BlueStudentMod.id("call_student");
+        public static final Type<CallStudentPayload> TYPE = new Type<>(ID);
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, CallStudentPayload> CODEC =
+                StreamCodec.composite(
+                        ByteBufCodecs.STRING_UTF8, CallStudentPayload::studentId,
+                        BLOCK_POS_CODEC, CallStudentPayload::tabletPos,
+                        CallStudentPayload::new
+                );
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    public record CallBackStudentPayload(String studentId, BlockPos tabletPos) implements CustomPacketPayload {
+        public static final Identifier ID = BlueStudentMod.id("call_back_student");
+        public static final Type<CallBackStudentPayload> TYPE = new Type<>(ID);
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, CallBackStudentPayload> CODEC =
+                StreamCodec.composite(
+                        ByteBufCodecs.STRING_UTF8, CallBackStudentPayload::studentId,
+                        BLOCK_POS_CODEC, CallBackStudentPayload::tabletPos,
+                        CallBackStudentPayload::new
+                );
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    public record CraftChamberCraftPayload(BlockPos chamberPos, int pageIndex) implements CustomPacketPayload {
+        public static final Identifier ID = BlueStudentMod.id("craft_chamber_craft");
+        public static final Type<CraftChamberCraftPayload> TYPE = new Type<>(ID);
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, CraftChamberCraftPayload> CODEC =
+                StreamCodec.composite(
+                        BLOCK_POS_CODEC, CraftChamberCraftPayload::chamberPos,
+                        ByteBufCodecs.INT, CraftChamberCraftPayload::pageIndex,
+                        CraftChamberCraftPayload::new
+                );
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    public record ShotFxPayload(
+            int shooterEntityId,
+            Vec3 start,
+            int fxTypeOrdinal,
+            float fxWidth,
+            float travelDist,
+            List<Vec3> dirs
+    ) implements CustomPacketPayload {
+        public static final Identifier ID = BlueStudentMod.id("s2c_shot_fx");
+        public static final Type<ShotFxPayload> TYPE = new Type<>(ID);
+
+        public static final StreamCodec<RegistryFriendlyByteBuf, ShotFxPayload> CODEC =
+                StreamCodec.composite(
+                        ByteBufCodecs.INT, ShotFxPayload::shooterEntityId,
+                        VEC3_CODEC, ShotFxPayload::start,
+                        ByteBufCodecs.INT, ShotFxPayload::fxTypeOrdinal,
+                        ByteBufCodecs.FLOAT, ShotFxPayload::fxWidth,
+                        ByteBufCodecs.FLOAT, ShotFxPayload::travelDist,
+                        VEC3_CODEC.apply(ByteBufCodecs.list()), ShotFxPayload::dirs,
+                        ShotFxPayload::new
+                );
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    public static void registerPayloads() {
+        PayloadTypeRegistry.serverboundPlay().register(SetAiModePayload.TYPE, SetAiModePayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CallStudentPayload.TYPE, CallStudentPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CallBackStudentPayload.TYPE, CallBackStudentPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(CraftChamberCraftPayload.TYPE, CraftChamberCraftPayload.CODEC);
+
+        PayloadTypeRegistry.clientboundPlay().register(ShotFxPayload.TYPE, ShotFxPayload.CODEC);
+    }
+
     public static void registerC2S() {
+        ServerPlayNetworking.registerGlobalReceiver(SetAiModePayload.TYPE, (payload, context) -> {
+            ServerPlayer player = context.player();
 
-        // =========================================
-        // AI MODE
-        // =========================================
-        ServerPlayNetworking.registerGlobalReceiver(SET_AI_MODE, (server, player, handler, buf, responseSender) -> {
+            context.server().execute(() -> {
+                var raw = player.level().getEntity(payload.entityId());
+                if (!(raw instanceof AbstractStudentEntity student)) {
+                    return;
+                }
 
-            final int entityId = buf.readInt();
-            final int modeId = buf.readInt();
+                UUID owner = student.getOwnerUuid();
+                if (owner == null || !owner.equals(player.getUUID())) {
+                    return;
+                }
 
-            server.execute(() -> {
-                var raw = player.getWorld().getEntityById(entityId);
-                if (!(raw instanceof IStudentEntity se)) return;
+                StudentAiMode mode = StudentAiMode.fromId(payload.modeId());
+                if (mode == null) {
+                    return;
+                }
 
-                se.setAiMode(StudentAiMode.fromId(modeId));
+                student.setAiMode(mode);
             });
         });
 
-
-
-        // =========================================
-// CALL (召喚)
-// =========================================
-        ServerPlayNetworking.registerGlobalReceiver(CALL_STUDENT, (server, player, handler, buf, responseSender) -> {
-
-            final String sidStr = buf.readString(64);
-            final BlockPos tabletPos = buf.readBlockPos();
+        ServerPlayNetworking.registerGlobalReceiver(CallStudentPayload.TYPE, (payload, context) -> {
+            ServerPlayer player = context.player();
+            MinecraftServer server = context.server();
 
             server.execute(() -> {
                 try {
-                    ServerWorld sw = player.getServerWorld();
-                    StudentWorldState state = StudentWorldState.get(sw);
+                    ServerLevel level = (ServerLevel) player.level();
+                    StudentWorldState state = StudentWorldState.get(level);
 
-                    StudentId sid = parseStudentId(sidStr);
+                    StudentId sid = parseStudentId(payload.studentId());
+                    BlockPos tabletPos = payload.tabletPos();
 
-                    System.out.println("[BlueStudent] CALL start sid=" + sid.asString() + " pos=" + tabletPos
-                            + " dim=" + sw.getRegistryKey().getValue());
-
-                    // すでに召喚済みなら終了
                     if (state.hasStudent(sid)) {
-                        player.sendMessage(Text.literal("Already summoned"), false);
-                        System.out.println("[BlueStudent] CALL blocked by hasStudent sid=" + sid.asString());
+                        player.sendSystemMessage(Component.literal("Already summoned"));
                         return;
                     }
 
-                    boolean creative = player.getAbilities().creativeMode;
-
-                    // ★コストチェック（消費はまだしない）
-// Ticket 1枚以上 または Diamond 64個以上で通す
-                    if (!creative) {
+                    if (!player.getAbilities().instabuild) {
                         int ticketCount = countItem(player, BlueStudentMod.TICKET);
                         int diamondCount = countItem(player, Items.DIAMOND);
 
-                        boolean hasTicketCost = ticketCount >= 1;
-                        boolean hasDiamondCost = diamondCount >= COST_DIAMOND;
-
-                        if (!hasTicketCost && !hasDiamondCost) {
-                            player.sendMessage(
-                                    Text.literal("Not enough cost. Need 1 Ticket or " + COST_DIAMOND + " Diamonds.")
-                                    , false
-                            );
+                        if (ticketCount < 1 && diamondCount < COST_DIAMOND) {
+                            player.sendSystemMessage(Component.literal(
+                                    "Not enough cost. Need 1 Ticket or " + COST_DIAMOND + " Diamonds."
+                            ));
                             return;
                         }
                     }
-                    // 生徒生成
+
                     Entity raw = switch (sid) {
-                        case SHIROKO -> BlueStudentMod.SHIROKO.create(sw);
-                        case HOSHINO -> BlueStudentMod.HOSHINO.create(sw);
-                        case HINA    -> BlueStudentMod.HINA.create(sw);
-                        case ALICE   -> BlueStudentMod.ALICE.create(sw);
-                        case KISAKI  -> BlueStudentMod.KISAKI.create(sw);
-                        case MARIE  -> BlueStudentMod.MARIE.create(sw);
-                        case HIKARI  -> BlueStudentMod.HIKARI.create(sw);
-                        case NOZOMI  -> BlueStudentMod.NOZOMI.create(sw);
+                        case SHIROKO -> new ShirokoEntity(BlueStudentMod.SHIROKO, level);
+                        case HOSHINO -> new HoshinoEntity(BlueStudentMod.HOSHINO, level);
+                        case HINA -> new HinaEntity(BlueStudentMod.HINA, level);
+                        case ALICE -> new AliceEntity(BlueStudentMod.ALICE, level);
+                        case KISAKI -> new KisakiEntity(BlueStudentMod.KISAKI, level);
+                        case MARIE -> new MarieEntity(BlueStudentMod.MARIE, level);
+                        case HIKARI -> new HikariEntity(BlueStudentMod.HIKARI, level);
+                        case NOZOMI -> new NozomiEntity(BlueStudentMod.NOZOMI, level);
                     };
 
-                    if (raw == null) {
-                        System.out.println("[BlueStudent] CALL raw==null sid=" + sid.asString());
-                        player.sendMessage(Text.literal("Spawn failed (raw==null)"), false);
-                        return;
-                    }
-
                     if (!(raw instanceof IStudentEntity se)) {
-                        System.out.println("[BlueStudent] CALL raw not IStudentEntity sid=" + sid.asString()
-                                + " class=" + raw.getClass().getName());
-                        player.sendMessage(Text.literal("Spawn failed (type mismatch)"), false);
+                        player.sendSystemMessage(Component.literal("Spawn failed (type mismatch)"));
                         return;
                     }
 
-                    BlockPos spawn = tabletPos.up();
+                    BlockPos spawn = tabletPos.above();
 
-                    raw.refreshPositionAndAngles(
-                            spawn.getX() + 0.5,
-                            spawn.getY(),
-                            spawn.getZ() + 0.5,
-                            player.getYaw(),
-                            0
-                    );
+                    raw.setPos(spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5);
+                    raw.setYRot(player.getYRot());
+                    raw.setXRot(0.0f);
 
-                    se.setOwnerUuid(player.getUuid());
+                    UUID owner = player.getUUID();
+                    se.setOwnerUuid(owner);
 
-                    boolean ok = sw.spawnEntity(raw);
-                    System.out.println("[BlueStudent] CALL spawnEntity ok=" + ok + " uuid=" + raw.getUuidAsString());
-
+                    boolean ok = level.addFreshEntity(raw);
                     if (!ok) {
-                        player.sendMessage(Text.literal("Spawn failed"), false);
+                        player.sendSystemMessage(Component.literal("Spawn failed"));
                         return;
                     }
 
-                    // ★ここでコスト支払い（Ticket優先 → ダイヤ64）
                     if (!consumeSummonCost(player)) {
-                        player.sendMessage(Text.literal("Not enough cost. Need 1 Ticket (preferred) or 64 Diamonds."), false);
+                        player.sendSystemMessage(Component.literal(
+                                "Not enough cost. Need 1 Ticket (preferred) or 64 Diamonds."
+                        ));
                         return;
                     }
 
-                    // 位置＋DIM保存
-                    state.setStudent(sid, raw.getUuid(), sw, spawn);
-
-                    player.sendMessage(Text.literal("Summoned"), false);
-
-                    System.out.println("[BlueStudent] CALL done sid=" + sid.asString());
+                    state.setStudent(sid, raw.getUUID(), owner, level, spawn);
+                    player.sendSystemMessage(Component.literal("Summoned"));
 
                 } catch (Throwable t) {
-                    System.out.println("[BlueStudent] CALL crashed: " + t);
-                    t.printStackTrace();
-                    player.sendMessage(Text.literal("CALL crashed. See log."), false);
+                    BlueStudentMod.LOGGER.error("[BlueStudent] CALL crashed", t);
+                    player.sendSystemMessage(Component.literal("CALL crashed. See log."));
                 }
             });
+
         });
 
-
-
-        // =========================================
-        // CALL BACK（完全版）
-        // =========================================
-        ServerPlayNetworking.registerGlobalReceiver(CALL_BACK_STUDENT, (server, player, handler, buf, responseSender) -> {
-
-            final String sidStr = buf.readString(64);
-            final BlockPos tabletPos = buf.readBlockPos();
+        ServerPlayNetworking.registerGlobalReceiver(CallBackStudentPayload.TYPE, (payload, context) -> {
+            ServerPlayer player = context.player();
+            MinecraftServer server = context.server();
 
             server.execute(() -> {
+                ServerLevel level = (ServerLevel) player.level();
+                StudentWorldState state = StudentWorldState.get(level);
 
-                ServerWorld sw = player.getServerWorld();
-                StudentWorldState state = StudentWorldState.get(sw);
-
-                StudentId sid = parseStudentId(sidStr);
-
+                StudentId sid = parseStudentId(payload.studentId());
                 UUID uuid = state.getStudentUuid(sid);
                 if (uuid == null) return;
 
-                BlockPos spawn = tabletPos.up();
+                BlockPos spawn = payload.tabletPos().above();
 
-                // ======================
-                // 同ディメンション
-                // ======================
-                Entity found = sw.getEntity(uuid);
-
+                // まず今のディメンションにいるか確認
+                Entity found = level.getEntity(uuid);
                 if (found != null && found.isAlive()) {
-                    found.refreshPositionAndAngles(
-                            spawn.getX() + 0.5,
-                            spawn.getY(),
-                            spawn.getZ() + 0.5,
-                            player.getYaw(),
-                            0
-
-                    );
-                    state.setStudent(sid, uuid, sw, spawn);
-
-                    return;
-                }
-
-
-                // ======================
-// 別ディメンション
-// ======================
-                StudentWorldState.StudentData data = state.getData(sid);
-                if (data == null) return;
-
-                var key = net.minecraft.registry.RegistryKey.of(
-                        net.minecraft.registry.RegistryKeys.WORLD,
-                        new Identifier(data.dimension)
-                );
-
-                ServerWorld oldWorld = player.getServer().getWorld(key);
-                if (oldWorld == null) return;
-
-                Entity other = oldWorld.getEntity(uuid);
-                if (other == null || !other.isAlive()) return;
-
-// ★復活中はCallBack無効（即復活事故防止）
-                if (other instanceof com.licht_meilleur.blue_student.entity.AbstractStudentEntity ase) {
-                    if (ase.isLifeLockedForGoal()) {
-                        player.sendMessage(Text.literal("Student is respawning..."), false);
+                    if (!(found instanceof AbstractStudentEntity student)) {
                         return;
                     }
 
-                    boolean ok = ase.teleportToWorldForCallback(sw, spawn, player.getYaw());
-                    if (ok) {
-                        state.setStudent(sid, uuid, sw, spawn); // ★DIM/POS更新
+                    UUID owner = student.getOwnerUuid();
+                    if (owner == null || !owner.equals(player.getUUID())) {
+                        return;
                     }
+
+                    found.setPos(spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5);
+                    found.setYRot(player.getYRot());
+                    found.setXRot(0.0f);
+                    state.setStudent(sid, found.getUUID(), owner, level, spawn);
                     return;
                 }
 
-// fallback（基本起きないはず）
-                Entity moved = other.moveToWorld(sw);
-                if (moved != null) {
-                    moved.refreshPositionAndAngles(
-                            spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5,
-                            player.getYaw(), 0
-                    );
-                    state.setStudent(sid, uuid, sw, spawn);
+                // 別ディメンション側を探す
+                StudentWorldState.StudentData data = state.getData(sid);
+                if (data == null || data.dimension == null) return;
+
+                ResourceKey<Level> key = ResourceKey.create(
+                        Registries.DIMENSION,
+                        Identifier.parse(data.dimension)
+                );
+
+                ServerLevel oldLevel = server.getLevel(key);
+                if (oldLevel == null) return;
+
+                Entity other = oldLevel.getEntity(uuid);
+                if (!(other instanceof AbstractStudentEntity ase) || !other.isAlive()) return;
+
+                UUID owner = ase.getOwnerUuid();
+                if (owner == null || !owner.equals(player.getUUID())) {
+                    return;
                 }
 
-            });
-        });
-        // =========================================
-// CRAFT CHAMBER (クラフト)
-// =========================================
-        ServerPlayNetworking.registerGlobalReceiver(CRAFT_CHAMBER_CRAFT, (server, player, handler, buf, responseSender) -> {
+                if (ase.isLifeLockedForGoal()) {
+                    player.sendSystemMessage(Component.literal("Student is respawning..."));
+                    return;
+                }
 
-            final BlockPos chamberPos = buf.readBlockPos();
-            final int pageIndex = buf.readVarInt();
+                boolean ok = ase.teleportToWorldForCallback(level, spawn, player.getYRot());
+                if (ok) {
+                    state.setStudent(sid, ase.getUUID(), owner, level, spawn);
+                }
+            });
+
+        });
+
+        ServerPlayNetworking.registerGlobalReceiver(CraftChamberCraftPayload.TYPE, (payload, context) -> {
+            ServerPlayer player = context.player();
+            MinecraftServer server = context.server();
 
             server.execute(() -> {
                 try {
-                    ServerWorld sw = player.getServerWorld();
+                    ServerLevel level = (ServerLevel) player.level();
+                    BlockPos chamberPos = payload.chamberPos();
 
-                    // 悪用防止：距離チェック（8ブロック以内）
-                    if (player.squaredDistanceTo(chamberPos.getX() + 0.5, chamberPos.getY() + 0.5, chamberPos.getZ() + 0.5) > 64) {
+                    if (player.distanceToSqr(
+                            chamberPos.getX() + 0.5,
+                            chamberPos.getY() + 0.5,
+                            chamberPos.getZ() + 0.5
+                    ) > 64) {
                         return;
                     }
 
-                    var be = sw.getBlockEntity(chamberPos);
-                    if (!(be instanceof com.licht_meilleur.blue_student.block.entity.CraftChamberBlockEntity chamber)) {
+                    var be = level.getBlockEntity(chamberPos);
+                    if (!(be instanceof CraftChamberBlockEntity)) {
                         return;
                     }
 
-                    // レシピ取得（あなたが作ったCraftChamberRecipesを使う）
-                    var recipe = com.licht_meilleur.blue_student.craft_chamber.CraftChamberRecipes.byIndex(pageIndex);
-
-                    boolean creative = player.getAbilities().creativeMode;
+                    var recipe = CraftChamberRecipes.byIndex(payload.pageIndex());
+                    boolean creative = player.getAbilities().instabuild;
 
                     if (!creative) {
-                        // 1) 足りるかチェック
                         for (var cost : recipe.costs()) {
                             if (countItem(player, cost.item()) < cost.count()) {
-                                player.sendMessage(Text.literal("Not enough materials"), true);
+                                player.sendSystemMessage(Component.literal("Not enough materials"));
                                 return;
                             }
                         }
-                        // 2) 消費
+
                         for (var cost : recipe.costs()) {
                             removeItem(player, cost.item(), cost.count());
                         }
                     }
 
-                    // 3) 生成（ブロックからポップ）
                     ItemStack out = recipe.output().copy();
 
-                    var drop = new net.minecraft.entity.ItemEntity(
-                            sw,
+                    ItemEntity drop = new ItemEntity(
+                            level,
                             chamberPos.getX() + 0.5,
                             chamberPos.getY() + 1.1,
                             chamberPos.getZ() + 0.5,
                             out
                     );
-                    drop.setToDefaultPickupDelay();
-                    drop.setVelocity(0, 0.20, 0); // 少し上に跳ねる
-                    sw.spawnEntity(drop);
+                    drop.setDefaultPickUpDelay();
+                    drop.setDeltaMovement(0, 0.20, 0);
+                    level.addFreshEntity(drop);
 
-                    // 演出（任意）
-                    sw.playSound(null, chamberPos, net.minecraft.sound.SoundEvents.BLOCK_ANVIL_USE,
-                            net.minecraft.sound.SoundCategory.BLOCKS, 0.6f, 1.2f);
+                    level.playSound(
+                            null,
+                            chamberPos,
+                            net.minecraft.sounds.SoundEvents.ANVIL_USE,
+                            net.minecraft.sounds.SoundSource.BLOCKS,
+                            0.6f,
+                            1.2f
+                    );
 
                 } catch (Throwable t) {
-                    System.out.println("[BlueStudent] CRAFT_CHAMBER_CRAFT crashed: " + t);
-                    t.printStackTrace();
-                    player.sendMessage(Text.literal("Craft failed. See log."), false);
+                    BlueStudentMod.LOGGER.error("[BlueStudent] CRAFT_CHAMBER_CRAFT crashed", t);
+                    player.sendSystemMessage(Component.literal("Craft failed. See log."));
                 }
             });
         });
     }
-    // =========================
-// StudentId 文字列 → enum 変換
-// =========================
+
     private static StudentId parseStudentId(String s) {
         for (StudentId id : StudentId.values()) {
             if (id.asString().equalsIgnoreCase(s)) return id;
@@ -325,72 +418,87 @@ public class ModPackets {
         }
         throw new IllegalArgumentException("Unknown StudentId: " + s);
     }
-    private static int countItem(ServerPlayerEntity player, Item item) {
+
+    private static int countItem(ServerPlayer player, Item item) {
         int total = 0;
         var inv = player.getInventory();
-        for (int i = 0; i < inv.size(); i++) {
-            ItemStack s = inv.getStack(i);
-            if (!s.isEmpty() && s.isOf(item)) total += s.getCount();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack s = inv.getItem(i);
+            if (!s.isEmpty() && s.is(item)) total += s.getCount();
         }
         return total;
     }
 
-    private static void removeItem(ServerPlayerEntity player, Item item, int amount) {
+    private static void removeItem(ServerPlayer player, Item item, int amount) {
         var inv = player.getInventory();
-        for (int i = 0; i < inv.size() && amount > 0; i++) {
-            ItemStack s = inv.getStack(i);
-            if (s.isEmpty() || !s.isOf(item)) continue;
+        for (int i = 0; i < inv.getContainerSize() && amount > 0; i++) {
+            ItemStack s = inv.getItem(i);
+            if (s.isEmpty() || !s.is(item)) continue;
 
             int take = Math.min(amount, s.getCount());
-            s.decrement(take);
+            s.shrink(take);
             amount -= take;
         }
     }
-    private static boolean consumeSummonCost(ServerPlayerEntity player) {
 
-        // クリエイティブは無料にしたいなら有効化
+    private static boolean consumeSummonCost(ServerPlayer player) {
         if (player.isCreative()) return true;
 
-        // ① Ticket優先
         if (consumeCount(player, BlueStudentMod.TICKET, 1)) {
             return true;
         }
 
-        // ② ダイヤ64
         return consumeCount(player, Items.DIAMOND, COST_DIAMOND);
     }
 
-    private static boolean consumeOne(ServerPlayerEntity player, Item item) {
-        return consumeCount(player, item, 1);
-    }
-
-    private static boolean consumeCount(ServerPlayerEntity player, Item item, int amount) {
+    private static boolean consumeCount(ServerPlayer player, Item item, int amount) {
         if (amount <= 0) return true;
 
         var inv = player.getInventory();
 
-        // まず所持数チェック
         int total = 0;
-        for (int i = 0; i < inv.size(); i++) {
-            ItemStack st = inv.getStack(i);
-            if (!st.isEmpty() && st.isOf(item)) total += st.getCount();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack st = inv.getItem(i);
+            if (!st.isEmpty() && st.is(item)) total += st.getCount();
             if (total >= amount) break;
         }
         if (total < amount) return false;
 
-        // 実際に減らす（前から順に）
         int remain = amount;
-        for (int i = 0; i < inv.size() && remain > 0; i++) {
-            ItemStack st = inv.getStack(i);
-            if (st.isEmpty() || !st.isOf(item)) continue;
+        for (int i = 0; i < inv.getContainerSize() && remain > 0; i++) {
+            ItemStack st = inv.getItem(i);
+            if (st.isEmpty() || !st.is(item)) continue;
 
             int take = Math.min(remain, st.getCount());
-            st.decrement(take);
+            st.shrink(take);
             remain -= take;
         }
 
-        player.currentScreenHandler.sendContentUpdates(); // 念のため同期
+        player.containerMenu.broadcastChanges();
         return true;
     }
 
+    public record CraftChamberPayload(String pos, int page)
+            implements CustomPacketPayload {
+
+        public static final CustomPacketPayload.Type<CraftChamberPayload> TYPE =
+                new CustomPacketPayload.Type<>(BlueStudentMod.id("craft_chamber"));
+
+        public static final StreamCodec<FriendlyByteBuf, CraftChamberPayload> CODEC =
+                StreamCodec.of(
+                        (buf, p) -> {
+                            buf.writeUtf(p.pos());
+                            buf.writeInt(p.page());
+                        },
+                        buf -> new CraftChamberPayload(
+                                buf.readUtf(),
+                                buf.readInt()
+                        )
+                );
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
 }

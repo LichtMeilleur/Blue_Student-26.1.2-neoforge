@@ -1,30 +1,33 @@
 package com.licht_meilleur.blue_student.block.entity;
 
+import com.geckolib.animatable.GeoBlockEntity;
+import com.geckolib.animatable.instance.AnimatableInstanceCache;
+import com.geckolib.animatable.manager.AnimatableManager;
+import com.geckolib.animation.AnimationController;
+import com.geckolib.animation.RawAnimation;
+import com.geckolib.animation.object.PlayState;
+import com.geckolib.util.GeckoLibUtil;
 import com.licht_meilleur.blue_student.BlueStudentMod;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.network.packet.s2c.play.BlockEntityUpdateS2CPacket;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.server.world.ServerWorld;
+import com.licht_meilleur.blue_student.block.OnlyBedBlock;
+import com.licht_meilleur.blue_student.student.StudentId;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 import org.jetbrains.annotations.Nullable;
-import software.bernie.geckolib.animatable.GeoBlockEntity;
-import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
-import software.bernie.geckolib.core.animation.AnimatableManager;
-import software.bernie.geckolib.core.animation.AnimationController;
-import software.bernie.geckolib.core.animation.AnimationState;
-import software.bernie.geckolib.core.object.PlayState;
-import software.bernie.geckolib.core.animation.RawAnimation;
-import software.bernie.geckolib.util.GeckoLibUtil;
 
 public class OnlyBedBlockEntity extends BlockEntity implements GeoBlockEntity {
+
+    private static final RawAnimation NORMAL =
+            RawAnimation.begin().thenLoop("animation.model.normal");
+    private static final RawAnimation SLEEP =
+            RawAnimation.begin().thenLoop("animation.model.sleep");
+
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
-    // animation key（only_for_bed.animation.json）
-    private static final RawAnimation NORMAL = RawAnimation.begin().thenLoop("animation.model.normal");
-    private static final RawAnimation SLEEP  = RawAnimation.begin().thenLoop("animation.model.sleep");
-
-    // ★サーバーがtrueにすると、クライアントでsleepアニメ再生
     private boolean sleepAnim = false;
 
     public OnlyBedBlockEntity(BlockPos pos, BlockState state) {
@@ -32,63 +35,86 @@ public class OnlyBedBlockEntity extends BlockEntity implements GeoBlockEntity {
     }
 
     public boolean isSleepAnim() {
-        return sleepAnim;
+        return this.sleepAnim;
     }
 
     public void setSleepAnim(boolean value) {
-        if (this.sleepAnim == value) return;
+        if (this.sleepAnim == value) {
+            return;
+        }
+
         this.sleepAnim = value;
-        markDirty();
-        sync();
+        this.setChanged();
+        this.sync();
+    }
+
+    public StudentId getStudentId() {
+        BlockState state = this.getBlockState();
+        if (state.hasProperty(OnlyBedBlock.STUDENT)) {
+            return state.getValue(OnlyBedBlock.STUDENT);
+        }
+        return StudentId.SHIROKO;
+    }
+
+    public String getBedTexturePath() {
+        return switch (getStudentId()) {
+            case SHIROKO -> "textures/entity/shiroko_bed.png";
+            case HOSHINO -> "textures/entity/hoshino_bed.png";
+            case HINA    -> "textures/entity/hina_bed.png";
+            case ALICE   -> "textures/entity/alice_bed.png";
+            case KISAKI  -> "textures/entity/kisaki_bed.png";
+            case MARIE   -> "textures/entity/marie_bed.png";
+            case HIKARI  -> "textures/entity/hikari_bed.png";
+            case NOZOMI  -> "textures/entity/nozomi_bed.png";
+        };
     }
 
     private void sync() {
-        if (world == null) return;
-        BlockState state = getCachedState();
-        world.updateListeners(pos, state, state, 3);
-    }
+        if (this.level == null) {
+            return;
+        }
 
+        BlockState state = this.getBlockState();
+        this.level.sendBlockUpdated(this.worldPosition, state, state, 3);
+    }
 
     @Override
     public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
-        controllers.add(new AnimationController<>(this, "main", 0, this::predicate));
-    }
-
-    private PlayState predicate(AnimationState<OnlyBedBlockEntity> state) {
-
-        return state.setAndContinue(this.sleepAnim ? SLEEP : NORMAL);
-
+        controllers.add(new AnimationController<>(
+                "main",
+                0,
+                state -> {
+                    state.setAnimation(this.sleepAnim ? SLEEP : NORMAL);
+                    return PlayState.CONTINUE;
+                }
+        ));
     }
 
     @Override
     public AnimatableInstanceCache getAnimatableInstanceCache() {
-        return cache;
-    }
-
-    // ---- NBT（保存用）
-    @Override
-    protected void writeNbt(NbtCompound nbt) {
-        super.writeNbt(nbt);
-        nbt.putBoolean("SleepAnim", sleepAnim);
+        return this.cache;
     }
 
     @Override
-    public void readNbt(NbtCompound nbt) {
-        super.readNbt(nbt);
-        sleepAnim = nbt.getBoolean("SleepAnim");
+    protected void saveAdditional(ValueOutput output) {
+        super.saveAdditional(output);
+        output.putBoolean("SleepAnim", this.sleepAnim);
     }
 
-    // ---- クライアント同期用（★ここが重要）
     @Override
-    public NbtCompound toInitialChunkDataNbt() {
-        NbtCompound nbt = new NbtCompound();
-        writeNbt(nbt);
-        return nbt;
+    protected void loadAdditional(ValueInput input) {
+        super.loadAdditional(input);
+        this.sleepAnim = input.getBooleanOr("SleepAnim", false);
+    }
+
+    @Override
+    public net.minecraft.nbt.CompoundTag getUpdateTag(HolderLookup.Provider registries) {
+        return this.saveCustomOnly(registries);
     }
 
     @Nullable
     @Override
-    public BlockEntityUpdateS2CPacket toUpdatePacket() {
-        return BlockEntityUpdateS2CPacket.create(this);
+    public ClientboundBlockEntityDataPacket getUpdatePacket() {
+        return ClientboundBlockEntityDataPacket.create(this);
     }
 }

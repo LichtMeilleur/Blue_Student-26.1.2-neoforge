@@ -4,10 +4,12 @@ import com.licht_meilleur.blue_student.entity.AbstractStudentEntity;
 import com.licht_meilleur.blue_student.entity.AliceEntity;
 import com.licht_meilleur.blue_student.student.IStudentEntity;
 import com.licht_meilleur.blue_student.student.StudentForm;
-import com.licht_meilleur.blue_student.weapon.*;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.ai.goal.Goal;
-import net.minecraft.entity.mob.HostileEntity;
+import com.licht_meilleur.blue_student.weapon.HitscanWeaponAction;
+import com.licht_meilleur.blue_student.weapon.WeaponAction;
+import com.licht_meilleur.blue_student.weapon.WeaponSpecs;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.entity.monster.Monster;
 
 import java.util.EnumSet;
 
@@ -18,7 +20,7 @@ public class AliceHyperShotGoal extends Goal {
 
     private final WeaponAction hitscan = new HitscanWeaponAction();
 
-    private static final int COOLDOWN = 160;   // 8秒
+    private static final int COOLDOWN = 160;
     private static final int CHARGE_TICKS = 20;
 
     private int cooldown = 0;
@@ -29,39 +31,28 @@ public class AliceHyperShotGoal extends Goal {
     public AliceHyperShotGoal(AbstractStudentEntity mob, IStudentEntity student) {
         this.mob = mob;
         this.student = student;
-
-        // 移動停止だけ使う
-        this.setControls(EnumSet.of(Control.MOVE));
+        this.setFlags(EnumSet.of(Flag.MOVE));
     }
 
     @Override
-    public boolean canStart() {
-
+    public boolean canUse() {
         if (mob.getForm() == StudentForm.BR) return false;
-
-        if (mob.getWorld().isClient) return false;
-
+        if (mob.level().isClientSide()) return false;
         if (mob.isLifeLockedForGoal()) return false;
 
-
-        // ★ここが重要：Goalが走ってなくても毎tick減算される
         if (cooldown > 0) {
             cooldown--;
             return false;
         }
-        // ★ mob.getTarget() 使わない！！
-        target = findNearestEnemy();
 
+        target = findNearestEnemy();
         return target != null;
     }
 
-
     @Override
-    public boolean shouldContinue() {
-        // ★ cooldownも含めて回す
+    public boolean canContinueToUse() {
         return charging > 0 && target != null && target.isAlive();
     }
-
 
     @Override
     public void start() {
@@ -80,40 +71,35 @@ public class AliceHyperShotGoal extends Goal {
 
         charging--;
 
-        // 停止（チャージ演出）
         mob.getNavigation().stop();
-        mob.setVelocity(0, 0, 0);
+        mob.setDeltaMovement(0, 0, 0);
 
-        // 照準固定
-        if (target != null) student.requestLookTarget(target, 5, 5);
+        if (target != null) {
+            student.requestLookTarget(target, 5, 5);
+        }
 
-        // チャージ完了 → 発射
         if (charging == 0 && target != null && target.isAlive()) {
             if (mob instanceof AliceEntity ae) {
-                ae.requestHyperShot(); // アニメトリガー
+                ae.requestHyperShot();
             }
             hitscan.shoot(student, target, WeaponSpecs.ALICE_HYPER);
-
-            cooldown = COOLDOWN; // ここで再設定
+            cooldown = COOLDOWN;
         }
     }
 
     private LivingEntity findNearestEnemy() {
-        var world = mob.getWorld();
-
+        var world = mob.level();
         double range = 40.0;
 
         LivingEntity best = null;
-        double bestD2 = 999999;
+        double bestD2 = Double.MAX_VALUE;
 
-        for (HostileEntity e : world.getEntitiesByClass(
-                HostileEntity.class,
-                mob.getBoundingBox().expand(range),
+        for (Monster e : world.getEntitiesOfClass(
+                Monster.class,
+                mob.getBoundingBox().inflate(range),
                 x -> x.isAlive()
-
-
         )) {
-            double d2 = mob.squaredDistanceTo(e);
+            double d2 = mob.distanceToSqr(e);
             if (d2 < bestD2) {
                 bestD2 = d2;
                 best = e;
@@ -122,5 +108,4 @@ public class AliceHyperShotGoal extends Goal {
 
         return best;
     }
-
 }

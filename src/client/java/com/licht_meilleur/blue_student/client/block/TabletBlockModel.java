@@ -1,23 +1,25 @@
 package com.licht_meilleur.blue_student.client.block;
 
+import com.geckolib.model.GeoModel;
+import com.geckolib.renderer.base.GeoRenderState;
 import com.licht_meilleur.blue_student.BlueStudentMod;
 import com.licht_meilleur.blue_student.block.entity.TabletBlockEntity;
-import net.minecraft.util.Identifier;
-import software.bernie.geckolib.model.GeoModel;
+import net.minecraft.resources.Identifier;
 
 public class TabletBlockModel extends GeoModel<TabletBlockEntity> {
+
     @Override
-    public Identifier getModelResource(TabletBlockEntity animatable) {
-        return new Identifier(BlueStudentMod.MOD_ID, "geo/tablet.geo.json");
+    public Identifier getModelResource(GeoRenderState renderState) {
+        return BlueStudentMod.id("tablet");
     }
 
     @Override
-    public Identifier getTextureResource(TabletBlockEntity animatable) {
-        return new Identifier(BlueStudentMod.MOD_ID, "textures/entity/tablet.png");
+    public Identifier getTextureResource(GeoRenderState renderState) {
+        return BlueStudentMod.id("textures/entity/tablet.png");
     }
 
     @Override
     public Identifier getAnimationResource(TabletBlockEntity animatable) {
-        return new Identifier(BlueStudentMod.MOD_ID, "animations/tablet.animation.json");
+        return BlueStudentMod.id("tablet");
     }
 }

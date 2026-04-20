@@ -9,7 +9,8 @@ import com.licht_meilleur.blue_student.inventory.StudentScreenHandler;
 import com.licht_meilleur.blue_student.student.IStudentEntity;
 import net.fabricmc.fabric.api.menu.v1.ExtendedMenuType;
 import net.minecraft.core.Registry;
-import net.minecraft.core.registries.Registries;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.Container;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.MenuType;
@@ -26,18 +27,18 @@ public class ModScreenHandlers {
         REGISTERED = true;
 
         STUDENT_MENU = Registry.register(
-                Registries.MENU,
+                BuiltInRegistries.MENU,
                 BlueStudentMod.id("student_menu"),
-                new ExtendedMenuType<StudentScreenHandler>(
+                new ExtendedMenuType<StudentScreenHandler, StudentMenuData>(
                         ModScreenHandlers::createStudent,
                         StudentMenuData.STREAM_CODEC
                 )
         );
 
         CRAFT_CHAMBER_MENU = Registry.register(
-                Registries.MENU,
+                BuiltInRegistries.MENU,
                 BlueStudentMod.id("craft_chamber_menu"),
-                new ExtendedMenuType<CraftChamberScreenHandler>(
+                new ExtendedMenuType<CraftChamberScreenHandler, CraftChamberMenuData>(
                         ModScreenHandlers::createCraftChamber,
                         CraftChamberMenuData.STREAM_CODEC
                 )
@@ -54,12 +55,29 @@ public class ModScreenHandlers {
             student = se;
         }
 
+        if (student == null) {
+            return new StudentScreenHandler(
+                    syncId,
+                    inv,
+                    null,
+                    new SimpleContainer(9),
+                    new SimpleContainer(1)
+            );
+        }
+
+        var studentInv = student.getStudentInventory();
+        Container equipInv = new SimpleContainer(1);
+
+        if (studentInv instanceof com.licht_meilleur.blue_student.inventory.StudentInventory si) {
+            equipInv = si.getEquipInv();
+        }
+
         return new StudentScreenHandler(
                 syncId,
                 inv,
                 student,
-                new SimpleContainer(9),
-                new SimpleContainer(1)
+                studentInv,
+                equipInv
         );
     }
 

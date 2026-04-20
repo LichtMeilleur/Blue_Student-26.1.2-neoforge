@@ -2,54 +2,116 @@ package com.licht_meilleur.blue_student.state;
 
 import com.licht_meilleur.blue_student.student.StudentForm;
 import com.licht_meilleur.blue_student.student.StudentId;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtElement;
-import net.minecraft.nbt.NbtList;
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
+import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.PersistentState;
-
-import java.util.EnumMap;
-import java.util.Map;
-
-
-
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.saveddata.SavedData;
+import net.minecraft.world.level.saveddata.SavedDataType;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
-public class StudentWorldState extends PersistentState {
+public class StudentWorldState extends SavedData {
 
     private static final String NAME = "blue_student_state";
 
     // sid -> full data
-    private final Map<String, StudentData> studentById = new HashMap<>();
+    private final Map<String, StudentData> studentById;
 
+    // sid.asString() -> packed data / flag
+    private final Map<String, CompoundTag> packedNbt;
+    private final Map<String, Boolean> packedFlag;
+
+    public StudentWorldState() {
+        this(new HashMap<>(), new HashMap<>(), new HashMap<>());
+    }
+
+    public StudentWorldState(
+            Map<String, StudentData> studentById,
+            Map<String, CompoundTag> packedNbt,
+            Map<String, Boolean> packedFlag
+    ) {
+        this.studentById = new HashMap<>(studentById);
+        this.packedNbt = new HashMap<>(packedNbt);
+        this.packedFlag = new HashMap<>(packedFlag);
+    }
+
+    private static final Codec<StudentData> STUDENT_DATA_CODEC = RecordCodecBuilder.create(instance ->
+            instance.group(
+                    Codec.STRING.xmap(UUID::fromString, UUID::toString)
+                            .optionalFieldOf("owner")
+                            .forGetter(d -> Optional.ofNullable(d.owner)),
+
+                    Codec.STRING.xmap(UUID::fromString, UUID::toString)
+                            .fieldOf("uuid")
+                            .forGetter(d -> d.uuid),
+
+                    Codec.STRING.optionalFieldOf("dimension", "minecraft:overworld")
+                            .forGetter(d -> d.dimension == null ? "minecraft:overworld" : d.dimension),
+
+                    Codec.LONG.optionalFieldOf("pos")
+                            .forGetter(d -> d.pos == null ? Optional.empty() : Optional.of(d.pos.asLong())),
+
+                    Codec.LONG.optionalFieldOf("bed")
+                            .forGetter(d -> d.bed == null ? Optional.empty() : Optional.of(d.bed.asLong())),
+
+                    Codec.STRING.optionalFieldOf("form", "normal")
+                            .forGetter(d -> d.form == null ? "normal" : d.form)
+            ).apply(instance, (owner, uuid, dim, posLong, bedLong, form) ->
+                    new StudentData(
+                            owner.orElse(null),
+                            uuid,
+                            dim,
+                            posLong.map(BlockPos::of).orElse(null),
+                            bedLong.map(BlockPos::of).orElse(null),
+                            form
+                    )
+            )
+    );
+
+    private static final Codec<StudentWorldState> CODEC = RecordCodecBuilder.create(instance ->
+            instance.group(
+                    Codec.unboundedMap(Codec.STRING, STUDENT_DATA_CODEC)
+                            .optionalFieldOf("students", Map.of())
+                            .forGetter(s -> s.studentById),
+                    Codec.unboundedMap(Codec.STRING, CompoundTag.CODEC)
+                            .optionalFieldOf("packedNbt", Map.of())
+                            .forGetter(s -> s.packedNbt),
+                    Codec.unboundedMap(Codec.STRING, Codec.BOOL)
+                            .optionalFieldOf("packedFlags", Map.of())
+                            .forGetter(s -> s.packedFlag)
+            ).apply(instance, StudentWorldState::new)
+    );
+
+    private static final SavedDataType<StudentWorldState> TYPE = new SavedDataType<>(
+            Identifier.fromNamespaceAndPath("blue_student", NAME),
+            StudentWorldState::new,
+            CODEC,
+            null
+    );
 
     // =====================================================
     // Overworld固定保存（全ディメンション共通DB）
     // =====================================================
-    public static StudentWorldState get(ServerWorld anyWorld) {
-        MinecraftServer server = anyWorld.getServer();
+    public static StudentWorldState get(ServerLevel anyLevel) {
+        MinecraftServer server = anyLevel.getServer();
         return get(server);
     }
 
     public static StudentWorldState get(MinecraftServer server) {
-        ServerWorld overworld = server.getOverworld();
-        return overworld.getPersistentStateManager().getOrCreate(
-                StudentWorldState::createFromNbt,
-                StudentWorldState::new,
-                NAME
-        );
+        ServerLevel overworld = server.overworld();
+        return overworld.getDataStorage().computeIfAbsent(TYPE);
     }
-
 
     // =====================================================
     // API
     // =====================================================
-
     public boolean hasStudent(StudentId sid) {
         return studentById.containsKey(sid.asString());
     }
@@ -63,39 +125,41 @@ public class StudentWorldState extends PersistentState {
         return studentById.get(sid.asString());
     }
 
+    public void setStudent(StudentId sid, UUID uuid, UUID owner, ServerLevel level, BlockPos pos) {
+        StudentData old = studentById.get(sid.asString());
 
-    // ★生成/更新（spawn時）
-    public void setStudent(StudentId sid, UUID uuid, ServerWorld world, BlockPos pos) {
+        String form = old != null && old.form != null ? old.form : "normal";
+        BlockPos bed = old != null ? old.bed : null;
+
         studentById.put(
                 sid.asString(),
                 new StudentData(
+                        owner,
                         uuid,
-                        world.getRegistryKey().getValue().toString(),
+                        level.dimension().toString(),
                         pos,
-                        null
+                        bed,
+                        form
                 )
         );
-        markDirty();
+        setDirty();
     }
 
-
-    // ★位置更新（tickで使うと便利）
-    public void updatePos(StudentId sid, ServerWorld world, BlockPos pos) {
+    public void updatePos(StudentId sid, ServerLevel level, BlockPos pos) {
         StudentData d = getData(sid);
         if (d == null) return;
 
-        d.dimension = world.getRegistryKey().getValue().toString();
+        d.dimension = level.dimension().toString();
         d.pos = pos;
-        markDirty();
+        setDirty();
     }
 
-    // ★ベッド登録
     public void setBed(StudentId sid, BlockPos bed) {
         StudentData d = getData(sid);
         if (d == null) return;
 
         d.bed = bed;
-        markDirty();
+        setDirty();
     }
 
     public BlockPos getBed(StudentId sid) {
@@ -105,122 +169,46 @@ public class StudentWorldState extends PersistentState {
 
     public void clearStudent(StudentId sid) {
         studentById.remove(sid.asString());
-        markDirty();
+        setDirty();
     }
 
     public void clearAll() {
         studentById.clear();
-        markDirty();
-    }
-
-
-    // =====================================================
-    // NBT load
-    // =====================================================
-    public static StudentWorldState createFromNbt(NbtCompound nbt) {
-        StudentWorldState s = new StudentWorldState();
-
-        if (nbt.contains("Students", NbtElement.LIST_TYPE)) {
-            NbtList list = nbt.getList("Students", NbtElement.COMPOUND_TYPE);
-
-            for (int i = 0; i < list.size(); i++) {
-                NbtCompound tag = list.getCompound(i);
-
-                String sid = tag.getString("Sid");
-                if (sid.isEmpty()) continue;
-                if (!tag.containsUuid("Uuid")) continue;
-
-                UUID uuid = tag.getUuid("Uuid");
-
-                String dim = tag.contains("Dim")
-                        ? tag.getString("Dim")
-                        : "minecraft:overworld";
-
-                BlockPos pos = tag.contains("Pos")
-                        ? BlockPos.fromLong(tag.getLong("Pos"))
-                        : null;
-
-                BlockPos bed = tag.contains("Bed")
-                        ? BlockPos.fromLong(tag.getLong("Bed"))
-                        : null;
-
-                s.studentById.put(sid, new StudentData(uuid, dim, pos, bed));
-            }
-        }
-
-        return s;
-    }
-
-
-    // =====================================================
-    // NBT save
-    // =====================================================
-    @Override
-    public NbtCompound writeNbt(NbtCompound nbt) {
-
-        NbtList list = new NbtList();
-
-        for (var e : studentById.entrySet()) {
-            StudentData d = e.getValue();
-
-            NbtCompound tag = new NbtCompound();
-            tag.putString("Sid", e.getKey());
-            tag.putUuid("Uuid", d.uuid);
-
-            if (d.dimension != null) tag.putString("Dim", d.dimension);
-            if (d.pos != null) tag.putLong("Pos", d.pos.asLong());
-            if (d.bed != null) tag.putLong("Bed", d.bed.asLong());
-
-            list.add(tag);
-        }
-
-        nbt.put("Students", list);
-        return nbt;
-    }
-
-
-    // =====================================================
-    // StudentData
-    // =====================================================
-    public static class StudentData {
-        public UUID uuid;
-        public String dimension;
-        public BlockPos pos;
-        public BlockPos bed;
-
-        public String form = "normal";
-
-        public StudentData(UUID uuid, String dim, BlockPos pos, BlockPos bed) {
-            this.uuid = uuid;
-            this.dimension = dim;
-            this.pos = pos;
-            this.bed = bed;
-
-            this.form = form;
-        }
+        packedNbt.clear();
+        packedFlag.clear();
+        setDirty();
     }
 
     public void clearBed(StudentId sid) {
         StudentData d = getData(sid);
         if (d == null) return;
         d.bed = null;
-        markDirty();
+        setDirty();
     }
-    // ★Packed保存
-    private final Map<StudentId, NbtCompound> packedNbt = new EnumMap<>(StudentId.class);
-    private final Map<StudentId, Boolean> packedFlag = new EnumMap<>(StudentId.class);
 
+    public void setPacked(StudentId sid, CompoundTag nbt) {
+        packedNbt.put(sid.asString(), nbt.copy());
+        setDirty();
+    }
 
+    public CompoundTag getPacked(StudentId sid) {
+        return packedNbt.get(sid.asString());
+    }
 
-    public void setPacked(StudentId sid, NbtCompound nbt) { packedNbt.put(sid, nbt.copy()); markDirty(); }
-    public NbtCompound getPacked(StudentId sid) { return packedNbt.get(sid); }
-    public void clearPacked(StudentId sid) { packedNbt.remove(sid); markDirty(); }
+    public void clearPacked(StudentId sid) {
+        packedNbt.remove(sid.asString());
+        setDirty();
+    }
 
-    public void setPackedFlag(StudentId sid, boolean v) { packedFlag.put(sid, v); markDirty(); }
-    public boolean isPacked(StudentId sid) { return packedFlag.getOrDefault(sid, false); }
+    public void setPackedFlag(StudentId sid, boolean v) {
+        packedFlag.put(sid.asString(), v);
+        setDirty();
+    }
 
+    public boolean isPacked(StudentId sid) {
+        return packedFlag.getOrDefault(sid.asString(), false);
+    }
 
-    // StudentWorldState.java に追加
     public StudentForm getForm(StudentId sid) {
         StudentData d = getData(sid);
         if (d == null) return StudentForm.NORMAL;
@@ -231,7 +219,27 @@ public class StudentWorldState extends PersistentState {
         StudentData d = getData(sid);
         if (d == null) return;
         d.form = form.asString();
-        markDirty();
+        setDirty();
     }
 
+    // =====================================================
+    // StudentData
+    // =====================================================
+    public static class StudentData {
+        public UUID owner;
+        public UUID uuid;
+        public String dimension;
+        public BlockPos pos;
+        public BlockPos bed;
+        public String form;
+
+        public StudentData(UUID owner, UUID uuid, String dim, BlockPos pos, BlockPos bed, String form) {
+            this.owner = owner;
+            this.uuid = uuid;
+            this.dimension = dim;
+            this.pos = pos;
+            this.bed = bed;
+            this.form = form == null ? "normal" : form;
+        }
+    }
 }

@@ -5,19 +5,16 @@ import com.licht_meilleur.blue_student.network.ModPackets;
 import com.licht_meilleur.blue_student.student.StudentAiMode;
 import com.licht_meilleur.blue_student.student.StudentId;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.StringWidget;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.core.BlockPos;
-import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 
 public class TabletStudentScreen extends Screen {
-
-    private final BlockPos tabletPos;
-    private final StudentId sid;
 
     private static final Identifier BG = BlueStudentMod.id("textures/gui/student_card.png");
     private static final Identifier SLOT = BlueStudentMod.id("textures/gui/student_slot.png");
@@ -25,9 +22,6 @@ public class TabletStudentScreen extends Screen {
     private static final int BG_W = 256;
     private static final int BG_H = 256;
     private static final int SLOT_SIZE = 18;
-
-    private int x0;
-    private int y0;
 
     private static final int FACE_X = 33;
     private static final int FACE_Y = 20;
@@ -45,13 +39,24 @@ public class TabletStudentScreen extends Screen {
     private static final int AI2_X = 140;
     private static final int AI2_Y = 200;
 
+    private static final int SKILL_LABEL_X = 48;
+    private static final int SKILL_LABEL_Y = 160;
     private static final int SKILL_X = 48;
     private static final int SKILL_Y = 170;
+
+    private static final int WEAPON_LABEL_X = 48;
+    private static final int WEAPON_LABEL_Y = 190;
     private static final int WEAPON_X = 48;
     private static final int WEAPON_Y = 200;
 
     private static final int EQUIP_SLOT_X = 150;
     private static final int EQUIP_SLOT_Y = 90;
+
+    private final BlockPos tabletPos;
+    private final StudentId sid;
+
+    private int x0;
+    private int y0;
 
     public TabletStudentScreen(BlockPos tabletPos, StudentId sid) {
         super(Component.empty());
@@ -67,78 +72,163 @@ public class TabletStudentScreen extends Screen {
         this.y0 = (this.height - BG_H) / 2;
 
         this.addRenderableWidget(
-                Button.builder(Component.literal("Back"), b -> {
-                            if (this.minecraft != null) {
-                                this.minecraft.setScreen(new TabletScreen(tabletPos));
-                            }
-                        })
-                        .bounds(x0 + 256 - 10 - 45, y0 + 228, 45, 18)
+                Button.builder(Component.literal("Back"), button ->
+                                this.minecraft.setScreen(new TabletScreen(this.tabletPos)))
+                        .bounds(this.x0 + 256 - 10 - 45, this.y0 + 228, 45, 18)
                         .build()
         );
 
         this.addRenderableWidget(
-                Button.builder(Component.literal("Call"), b -> {
-                            sendCall();
+                Button.builder(Component.literal("Call"), button -> {
+                            this.sendCall();
                             this.onClose();
                         })
-                        .bounds(x0 + 10, y0 + 228, 45, 18)
+                        .bounds(this.x0 + 10, this.y0 + 228, 45, 18)
                         .build()
         );
 
         this.addRenderableWidget(
-                Button.builder(Component.literal("CallBack"), b -> {
-                            sendCallBack();
+                Button.builder(Component.literal("CallBack"), button -> {
+                            this.sendCallBack();
                             this.onClose();
                         })
-                        .bounds(x0 + 10 + 50, y0 + 228, 70, 18)
+                        .bounds(this.x0 + 60, this.y0 + 228, 70, 18)
                         .build()
+        );
+
+        StudentAiMode[] ai = this.sid.getAllowedAis();
+        StudentAiMode ai1 = ai.length >= 1 ? ai[0] : StudentAiMode.FOLLOW;
+        StudentAiMode ai2 = ai.length >= 2 ? ai[1] : StudentAiMode.SECURITY;
+
+        this.addRenderableWidget(
+                new StringWidget(
+                        this.x0 + NAME_X,
+                        this.y0 + NAME_Y,
+                        120,
+                        10,
+                        this.sid.getNameText(),
+                        this.font
+                )
+        );
+
+        this.addRenderableWidget(
+                new StringWidget(
+                        this.x0 + HP_X,
+                        this.y0 + HP_Y,
+                        150,
+                        10,
+                        Component.literal("HP: ? / " + this.sid.getBaseMaxHp() + "  DEF: " + this.sid.getBaseDefense()),
+                        this.font
+                )
+        );
+
+        this.addRenderableWidget(
+                new StringWidget(
+                        this.x0 + AI1_X,
+                        this.y0 + AI1_Y,
+                        90,
+                        10,
+                        ai1.getText(),
+                        this.font
+                )
+        );
+
+        this.addRenderableWidget(
+                new StringWidget(
+                        this.x0 + AI2_X,
+                        this.y0 + AI2_Y,
+                        100,
+                        10,
+                        ai2.getText(),
+                        this.font
+                )
+        );
+
+        this.addRenderableWidget(
+                new StringWidget(
+                        this.x0 + SKILL_LABEL_X,
+                        this.y0 + SKILL_LABEL_Y,
+                        60,
+                        10,
+                        Component.literal("Skill"),
+                        this.font
+                )
+        );
+
+        this.addRenderableWidget(
+                new StringWidget(
+                        this.x0 + SKILL_X,
+                        this.y0 + SKILL_Y,
+                        140,
+                        10,
+                        this.sid.getOnlySkillText(),
+                        this.font
+                )
+        );
+
+        this.addRenderableWidget(
+                new StringWidget(
+                        this.x0 + WEAPON_LABEL_X,
+                        this.y0 + WEAPON_LABEL_Y,
+                        70,
+                        10,
+                        Component.literal("Weapon"),
+                        this.font
+                )
+        );
+
+        this.addRenderableWidget(
+                new StringWidget(
+                        this.x0 + WEAPON_X,
+                        this.y0 + WEAPON_Y,
+                        140,
+                        10,
+                        this.sid.getWeaponText(),
+                        this.font
+                )
         );
     }
 
     @Override
-    public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        this.renderBackground(guiGraphics, mouseX, mouseY, partialTick);
+    public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+        super.extractBackground(graphics, mouseX, mouseY, partialTick);
 
-        guiGraphics.blit(BG, x0, y0, 0, 0, BG_W, BG_H, BG_W, BG_H);
+        graphics.blit(RenderPipelines.GUI_TEXTURED, BG, this.x0, this.y0, 0.0F, 0.0F, BG_W, BG_H, BG_W, BG_H);
 
         for (int row = 0; row < 3; row++) {
             for (int col = 0; col < 3; col++) {
-                int sx = x0 + STUDENT_SLOT_X + col * SLOT_SIZE;
-                int sy = y0 + STUDENT_SLOT_Y + row * SLOT_SIZE;
-                guiGraphics.blit(SLOT, sx, sy, 0, 0, 18, 18, 18, 18);
+                int sx = this.x0 + STUDENT_SLOT_X + col * SLOT_SIZE;
+                int sy = this.y0 + STUDENT_SLOT_Y + row * SLOT_SIZE;
+                graphics.blit(RenderPipelines.GUI_TEXTURED, SLOT, sx, sy, 0.0F, 0.0F, 18, 18, 18, 18);
             }
         }
 
-        guiGraphics.blit(sid.getFaceTexture(), x0 + FACE_X, y0 + FACE_Y, 0, 0, 50, 50, 50, 50);
-
-        guiGraphics.drawString(this.font, sid.getNameText(), x0 + NAME_X, y0 + NAME_Y, 0x1A1A1A, false);
-
-        guiGraphics.drawString(
-                this.font,
-                "HP: ? / " + sid.getBaseMaxHp() + "  DEF: " + sid.getBaseDefense(),
-                x0 + HP_X,
-                y0 + HP_Y,
-                0x1A1A1A,
-                false
+        graphics.blit(
+                RenderPipelines.GUI_TEXTURED,
+                this.sid.getFaceTexture(),
+                this.x0 + FACE_X,
+                this.y0 + FACE_Y,
+                0.0F,
+                0.0F,
+                50,
+                50,
+                50,
+                50
         );
 
-        StudentAiMode[] ai = sid.getAllowedAis();
-        StudentAiMode ai1 = (ai.length >= 1) ? ai[0] : StudentAiMode.FOLLOW;
-        StudentAiMode ai2 = (ai.length >= 2) ? ai[1] : StudentAiMode.SECURITY;
-
-        drawScaledText(guiGraphics, ai1.getText().getString(), x0 + AI1_X, y0 + AI1_Y, 0x101010, 1.6f);
-        drawScaledText(guiGraphics, ai2.getText().getString(), x0 + AI2_X, y0 + AI2_Y, 0x101010, 1.6f);
-
-        drawScaledText(guiGraphics, "Skill", x0 + 48, y0 + 160, 0x101010, 1.0f);
-        guiGraphics.drawString(this.font, sid.getOnlySkillText(), x0 + SKILL_X, y0 + SKILL_Y, 0x1A1A1A, false);
-
-        drawScaledText(guiGraphics, "Weapon", x0 + 48, y0 + 190, 0x101010, 1.0f);
-        guiGraphics.drawString(this.font, sid.getWeaponText(), x0 + WEAPON_X, y0 + WEAPON_Y, 0x1A1A1A, false);
-
-        Identifier equipSlotTex = com.licht_meilleur.blue_student.student.StudentEquipments.getBrSlotTexture(sid);
-        guiGraphics.blit(equipSlotTex, x0 + EQUIP_SLOT_X, y0 + EQUIP_SLOT_Y, 0, 0, 36, 36, 36, 36);
-
-        super.render(guiGraphics, mouseX, mouseY, partialTick);
+        Identifier equipSlotTex = com.licht_meilleur.blue_student.student.StudentEquipments.getBrSlotTexture(this.sid);
+        graphics.blit(
+                RenderPipelines.GUI_TEXTURED,
+                equipSlotTex,
+                this.x0 + EQUIP_SLOT_X,
+                this.y0 + EQUIP_SLOT_Y,
+                0.0F,
+                0.0F,
+                36,
+                36,
+                36,
+                36
+        );
     }
 
     @Override
@@ -147,25 +237,16 @@ public class TabletStudentScreen extends Screen {
     }
 
     private void sendCall() {
-        PacketByteBuf buf = PacketByteBufs.create();
-        buf.writeString(sid.asString());
-        buf.writeBlockPos(tabletPos);
-        ClientPlayNetworking.send(ModPackets.CALL_STUDENT, buf);
+        ClientPlayNetworking.send(new ModPackets.CallStudentPayload(
+                this.sid.asString(),
+                this.tabletPos
+        ));
     }
 
     private void sendCallBack() {
-        PacketByteBuf buf = PacketByteBufs.create();
-        buf.writeString(sid.asString());
-        buf.writeBlockPos(tabletPos);
-        ClientPlayNetworking.send(ModPackets.CALL_BACK_STUDENT, buf);
-    }
-
-    private void drawScaledText(GuiGraphics guiGraphics, String text, int x, int y, int color, float scale) {
-        var pose = guiGraphics.pose();
-        pose.pushPose();
-        pose.translate(x, y, 0);
-        pose.scale(scale, scale, 1.0f);
-        guiGraphics.drawString(this.font, text, 0, 0, color, false);
-        pose.popPose();
+        ClientPlayNetworking.send(new ModPackets.CallBackStudentPayload(
+                this.sid.asString(),
+                this.tabletPos
+        ));
     }
 }

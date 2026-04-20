@@ -1,209 +1,181 @@
 package com.licht_meilleur.blue_student.block;
 
-import com.licht_meilleur.blue_student.BlueStudentMod;
 import com.licht_meilleur.blue_student.block.entity.OnlyBedBlockEntity;
 import com.licht_meilleur.blue_student.registry.StudentBedRegistry;
 import com.licht_meilleur.blue_student.student.StudentId;
-import net.minecraft.block.*;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.enums.BedPart;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.state.StateManager;
-import net.minecraft.state.property.DirectionProperty;
-import net.minecraft.state.property.EnumProperty;
-import net.minecraft.state.property.Properties;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.shape.VoxelShape;
-import net.minecraft.world.BlockView;
-import net.minecraft.world.World;
-import net.minecraft.world.WorldAccess;
-import net.minecraft.world.WorldView;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.*;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.EntityBlock;
+import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BedPart;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
+import net.minecraft.world.level.block.state.properties.EnumProperty;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import org.jetbrains.annotations.Nullable;
 
-public class OnlyBedBlock extends BlockWithEntity {
-    public static final DirectionProperty FACING = Properties.HORIZONTAL_FACING;
-    public static final EnumProperty<BedPart> PART = Properties.BED_PART;
-
+public class OnlyBedBlock extends Block implements EntityBlock {
+    public static final EnumProperty<Direction> FACING = BlockStateProperties.HORIZONTAL_FACING;
+    public static final EnumProperty<BedPart> PART = BlockStateProperties.BED_PART;
     public static final EnumProperty<StudentId> STUDENT =
-            EnumProperty.of("student", StudentId.class);
+            EnumProperty.create("student", StudentId.class, StudentId.values());
 
-    private static final VoxelShape BED_SHAPE =
-            Block.createCuboidShape(0.0, 0.0, 0.0, 16.0, 9.0, 16.0); // 9/16 高さ（バニラ寄せ）
+    private static final VoxelShape BED_SHAPE = Block.box(0.0, 0.0, 0.0, 16.0, 9.0, 16.0);
+    public static final EnumProperty<DoubleBlockHalf> HALF = BlockStateProperties.DOUBLE_BLOCK_HALF;
 
-    public OnlyBedBlock(Settings settings) {
+
+    public OnlyBedBlock(BlockBehaviour.Properties settings) {
         super(settings);
-        this.setDefaultState(this.getStateManager().getDefaultState()
-                .with(FACING, Direction.NORTH)
-                .with(PART, BedPart.FOOT)
-                .with(STUDENT, StudentId.SHIROKO)
+        this.registerDefaultState(
+                this.stateDefinition.any()
+                        .setValue(FACING, Direction.NORTH)
+                        .setValue(PART, BedPart.FOOT)
+                        .setValue(STUDENT, StudentId.SHIROKO)
         );
     }
 
-
-
     @Override
-    protected void appendProperties(StateManager.Builder<Block, BlockState> builder) {
-        builder.add(FACING, PART, STUDENT);
+    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+        builder.add(FACING, PART, STUDENT, HALF);
     }
 
     @Override
-    public BlockRenderType getRenderType(BlockState state) {
-        return BlockRenderType.INVISIBLE;
+    public RenderShape getRenderShape(BlockState state) {
+        return RenderShape.INVISIBLE;
     }
 
     @Nullable
     @Override
-    public BlockEntity createBlockEntity(BlockPos pos, BlockState state) {
-        return state.get(PART) == BedPart.FOOT ? new OnlyBedBlockEntity(pos, state) : null;
+    public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
+        return state.getValue(PART) == BedPart.FOOT ? new OnlyBedBlockEntity(pos, state) : null;
     }
 
     @Override
-    public boolean canPlaceAt(BlockState state, WorldView world, BlockPos pos) {
-        // ★ネザー/エンド禁止（Overworldのみ許可）
-        if (world instanceof World w) {
-            if (!w.getRegistryKey().equals(World.OVERWORLD)) return false;
+    public boolean canSurvive(BlockState state, LevelReader level, BlockPos pos) {
+        if (level instanceof Level realLevel) {
+            if (!realLevel.dimension().equals(Level.OVERWORLD)) {
+                return false;
+            }
         }
 
-        BedPart part = state.get(PART);
-        Direction facing = state.get(FACING);
+        BedPart part = state.getValue(PART);
+        Direction facing = state.getValue(FACING);
 
         if (part == BedPart.FOOT) {
-            BlockPos headPos = pos.offset(facing);
-            return world.getBlockState(headPos).isReplaceable();
+            BlockPos headPos = pos.relative(facing);
+            return level.getBlockState(headPos).canBeReplaced();
         } else {
-            BlockPos footPos = pos.offset(facing.getOpposite());
-            BlockState foot = world.getBlockState(footPos);
-            return foot.isOf(this) && foot.get(PART) == BedPart.FOOT;
+            BlockPos footPos = pos.relative(facing.getOpposite());
+            BlockState foot = level.getBlockState(footPos);
+            return foot.is(this) && foot.getValue(PART) == BedPart.FOOT;
         }
     }
 
     @Override
-    public BlockState getStateForNeighborUpdate(BlockState state, Direction dir,
-                                                BlockState neighborState, WorldAccess world,
-                                                BlockPos pos, BlockPos neighborPos) {
-
-        // ★相方が存在しないなら自分も消える（dir/neighborPosに依存しない）
-        BlockPos other = findOtherHalfPos(world, pos, state);
+    protected BlockState updateShape(BlockState state,
+                                     LevelReader level,
+                                     ScheduledTickAccess scheduledTickAccess,
+                                     BlockPos pos,
+                                     Direction dir,
+                                     BlockPos neighborPos,
+                                     BlockState neighborState,
+                                     RandomSource random) {
+        BlockPos other = findOtherHalfPos(level, pos, state);
         if (other == null) {
-            return Blocks.AIR.getDefaultState();
+            return Blocks.AIR.defaultBlockState();
+        }
+        return state;
+    }
+
+    @Nullable
+    public BlockPos findOtherHalfPos(LevelReader level, BlockPos pos, BlockState state) {
+        if (state == null || !state.is(this)) {
+            return null;
+        }
+        if (!state.hasProperty(HALF) || !state.hasProperty(FACING)) {
+            return null;
         }
 
-        return state; // superに行かずそのまま保持が安全
+        DoubleBlockHalf half = state.getValue(HALF);
+        Direction facing = state.getValue(FACING);
+
+        return half == DoubleBlockHalf.LOWER
+                ? pos.above()
+                : pos.below();
     }
-
-
-
-
-    /**
-     * ★相方座標を「両候補チェック」で確実に取得する
-     * - 向き反転や置換経路で、FACINGと配置の対応がズレても拾える
-     */
-    private @Nullable BlockPos findOtherHalfPos(WorldAccess world, BlockPos pos, BlockState state) {
-        if (!state.isOf(this)) return null;
-
-        BedPart part = state.get(PART);
-        Direction facing = state.get(FACING);
-
-        // 通常候補
-        BlockPos cand1 = (part == BedPart.FOOT) ? pos.offset(facing) : pos.offset(facing.getOpposite());
-        BlockState s1 = world.getBlockState(cand1);
-        if (s1.isOf(this) && s1.contains(PART) && s1.get(PART) != part) return cand1;
-
-        // 逆候補（反転事故対策）
-        BlockPos cand2 = (part == BedPart.FOOT) ? pos.offset(facing.getOpposite()) : pos.offset(facing);
-        BlockState s2 = world.getBlockState(cand2);
-        if (s2.isOf(this) && s2.contains(PART) && s2.get(PART) != part) return cand2;
-
-        return null;
-    }
-
 
     @Override
-    public void afterBreak(World world, PlayerEntity player, BlockPos pos,
-                           BlockState state, @Nullable BlockEntity blockEntity, ItemStack tool) {
+    public void playerDestroy(Level level, Player player, BlockPos pos,
+                              BlockState state, @Nullable BlockEntity blockEntity, ItemStack tool) {
+        super.playerDestroy(level, player, pos, state, blockEntity, tool);
 
-        super.afterBreak(world, player, pos, state, blockEntity, tool);
-
-        if (!world.isClient && state.get(PART) == BedPart.FOOT) {
-
-            // ★ 専用は返さない
-            // ★ バニラベッドだけ返す（安全）
-            dropStack(world, pos, new ItemStack(Items.WHITE_BED));
+        if (!level.isClientSide() && state.getValue(PART) == BedPart.FOOT) {
+            popResource(level, pos, new ItemStack(Items.WHITE_BED));
         }
     }
 
-
-
     @Override
-    public void onStateReplaced(BlockState state, World world, BlockPos pos,
-                                BlockState newState, boolean moved) {
-        if (state.isOf(newState.getBlock())) {
-            super.onStateReplaced(state, world, pos, newState, moved);
+    public void onPlace(BlockState state, Level level, BlockPos pos, BlockState oldState, boolean moved) {
+
+        BlockPos other = findOtherHalfPos(level, pos, state);
+        if (other == null) {
             return;
         }
 
-        if (!world.isClient) {
-            BlockPos otherPos = findOtherHalfPos(world, pos, state);
+        // 同じブロックなら何もしない
+        if (oldState.is(state.getBlock())) {
+            return;
+        }
+
+        if (!level.isClientSide()) {
+            BlockPos otherPos = findOtherHalfPos(level, pos, oldState);
             if (otherPos != null) {
-                world.breakBlock(otherPos, false); // dropなし
+                level.destroyBlock(otherPos, false);
             }
         }
-
-        super.onStateReplaced(state, world, pos, newState, moved);
     }
 
-   /* @Override
-    public void afterBreak(World world, PlayerEntity player, BlockPos pos, BlockState state,
-                           @Nullable BlockEntity blockEntity, ItemStack tool) {
-        super.afterBreak(world, player, pos, state, blockEntity, tool);
-
-        // ★ドロップはFOOTだけ
-        if (!world.isClient && state.get(PART) == BedPart.FOOT) {
-            StudentId sid = state.get(STUDENT);
-            dropStack(world, pos, new ItemStack(BlueStudentMod.getBedItemFor(sid)));
-        }
-    }:*/
-
     @Override
-    public VoxelShape getCollisionShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+    public VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
         return BED_SHAPE;
     }
 
     @Override
-    public VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+    public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
         return BED_SHAPE;
     }
+
     @Override
-    public void onPlaced(World world, BlockPos pos, BlockState state,
-                         @Nullable LivingEntity placer, ItemStack itemStack) {
+    public void setPlacedBy(Level level, BlockPos pos, BlockState state,
+                            @Nullable LivingEntity placer, ItemStack stack) {
+        super.setPlacedBy(level, pos, state, placer, stack);
 
-        super.onPlaced(world, pos, state, placer, itemStack);
+        if (level.isClientSide()) return;
+        if (state.getValue(PART) != BedPart.FOOT) return;
 
-        if (world.isClient) return;
-
-        if (state.get(PART) != BedPart.FOOT) return;
-
-        StudentId sid = state.get(STUDENT);
-
-        // ★既存ベッドチェック
+        StudentId sid = state.getValue(STUDENT);
         BlockPos old = StudentBedRegistry.get(sid);
 
         if (old != null && !old.equals(pos)) {
-
-            BlockState oldState = world.getBlockState(old);
-
-            // まだ存在してたら破壊（バニラベッドにする場合は setBlockState に変更可）
+            BlockState oldState = level.getBlockState(old);
             if (oldState.getBlock() instanceof OnlyBedBlock) {
-                world.breakBlock(old, true); // true = ドロップあり
+                level.destroyBlock(old, true);
             }
         }
 
-        // ★新しい座標登録
         StudentBedRegistry.set(sid, pos);
     }
-
 }

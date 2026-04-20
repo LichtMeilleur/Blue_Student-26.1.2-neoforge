@@ -2,7 +2,7 @@ package com.licht_meilleur.blue_student.ai.only;
 
 import com.licht_meilleur.blue_student.entity.HinaEntity;
 import com.licht_meilleur.blue_student.student.IStudentEntity;
-import net.minecraft.entity.ai.goal.Goal;
+import net.minecraft.world.entity.ai.goal.Goal;
 
 public class HinaFlyGoal extends Goal {
     private final HinaEntity mob;
@@ -14,7 +14,7 @@ public class HinaFlyGoal extends Goal {
     }
 
     @Override
-    public boolean canStart() {
+    public boolean canUse() {
         return mob.isFlying() && student.hasQueuedFire();
     }
 
@@ -30,8 +30,6 @@ public class HinaFlyGoal extends Goal {
 
     @Override
     public void tick() {
-        // ここで撃たない。既存Aim/Combatが撃つ。
-        // ただ「撃つ予定がある間だけ fly_shot にする」ため、キューが空なら戻す
         if (!student.hasQueuedFire()) {
             mob.setFlyShooting(false);
         }

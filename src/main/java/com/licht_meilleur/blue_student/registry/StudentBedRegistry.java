@@ -1,7 +1,7 @@
 package com.licht_meilleur.blue_student.registry;
 
 import com.licht_meilleur.blue_student.student.StudentId;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 import java.util.HashMap;
 import java.util.Map;

@@ -5,95 +5,105 @@ import com.licht_meilleur.blue_student.block.OnlyBedBlock;
 import com.licht_meilleur.blue_student.state.StudentWorldState;
 import com.licht_meilleur.blue_student.student.StudentId;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
-import net.minecraft.block.BedBlock;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.enums.BedPart;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.Items;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.block.Blocks;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.math.Direction;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.level.block.BedBlock;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BedPart;
+import net.minecraft.world.item.Items;
 
 public class BedLinkEvents {
 
     public static void register() {
         UseBlockCallback.EVENT.register((player, world, hand, hit) -> {
-            if (world.isClient) return ActionResult.PASS;
-            if (!player.isSneaking()) return ActionResult.PASS;
+            if (world.isClientSide()) {
+                return InteractionResult.PASS;
+            }
 
-            // ★設置中は無視（超重要）
-            if (player.getStackInHand(hand).isOf(Items.WHITE_BED)) {
-                return ActionResult.PASS;
+            if (!player.isCrouching()) {
+                return InteractionResult.PASS;
+            }
+
+            // 設置中は無視
+            if (player.getItemInHand(hand).is(Items.WHITE_BED)) {
+                return InteractionResult.PASS;
             }
 
             BlockPos pos = hit.getBlockPos();
             BlockState state = world.getBlockState(pos);
 
-            if (!(state.getBlock() instanceof BedBlock)) return ActionResult.PASS;
+            if (!(state.getBlock() instanceof BedBlock)) {
+                return InteractionResult.PASS;
+            }
 
-            StudentId linking = BedLinkManager.getLinking(player.getUuid());
-            if (linking == null) return ActionResult.PASS;
+            StudentId linking = BedLinkManager.getLinking(player.getUUID());
+            if (linking == null) {
+                return InteractionResult.PASS;
+            }
 
-            Direction vanillaFacing = state.get(BedBlock.FACING);
-            BedPart part = state.get(BedBlock.PART);
+            Direction vanillaFacing = state.getValue(BedBlock.FACING);
+            BedPart part = state.getValue(BedBlock.PART);
 
-            // バニラのFOOT基準に揃える
-            BlockPos vanillaFootPos = (part == BedPart.FOOT) ? pos : pos.offset(vanillaFacing.getOpposite());
-            BlockPos vanillaHeadPos = vanillaFootPos.offset(vanillaFacing);
+            // バニラの FOOT 基準に揃える
+            BlockPos vanillaFootPos = (part == BedPart.FOOT)
+                    ? pos
+                    : pos.relative(vanillaFacing.getOpposite());
+            BlockPos vanillaHeadPos = vanillaFootPos.relative(vanillaFacing);
 
-            // OnlyBed の向き（モデル都合で反転したいなら opposite のままでOK）
-            //Direction onlyFacing = vanillaFacing.getOpposite();
-            Direction onlyFacing = vanillaFacing;              // ★opposite を外す
+            // OnlyBed の向き
+            Direction onlyFacing = vanillaFacing;
 
             // OnlyBed の HEAD は onlyFacing 基準
-            BlockPos onlyHeadPos = vanillaFootPos.offset(onlyFacing);
+            BlockPos onlyHeadPos = vanillaFootPos.relative(onlyFacing);
 
-            // 既存OnlyBed除去（ドロップなし）
-            BlockPos oldFoot = StudentWorldState.get(((ServerWorld)world).getServer()).getBed(linking);
+            ServerLevel serverLevel = (ServerLevel) world;
+
+            // 既存 OnlyBed 除去（ドロップなし）
+            BlockPos oldFoot = StudentWorldState.get(serverLevel.getServer()).getBed(linking);
             if (oldFoot == null) {
-                oldFoot = BedLinkManager.getBedPos(player.getUuid(), linking); // 互換フォールバック
+                oldFoot = BedLinkManager.getBedPos(player.getUUID(), linking); // 互換フォールバック
             }
 
             if (oldFoot != null) {
                 BlockState old = world.getBlockState(oldFoot);
-                if (old.isOf(BlueStudentMod.ONLY_BED_BLOCK) && old.contains(OnlyBedBlock.FACING)) {
-                    Direction f = old.get(OnlyBedBlock.FACING);
-                    BlockPos oldHead = oldFoot.offset(f);
-                    int killFlags = Block.NOTIFY_ALL | Block.SKIP_DROPS;
-                    world.setBlockState(oldHead, Blocks.AIR.getDefaultState(), killFlags);
-                    world.setBlockState(oldFoot, Blocks.AIR.getDefaultState(), killFlags);
+                if (old.getBlock() == BlueStudentMod.ONLY_BED_BLOCK && old.hasProperty(OnlyBedBlock.FACING)) {
+                    Direction f = old.getValue(OnlyBedBlock.FACING);
+                    BlockPos oldHead = oldFoot.relative(f);
+                    int killFlags = Block.UPDATE_ALL | Block.UPDATE_SUPPRESS_DROPS;
+                    world.setBlock(oldHead, Blocks.AIR.defaultBlockState(), killFlags);
+                    world.setBlock(oldFoot, Blocks.AIR.defaultBlockState(), killFlags);
                 }
             }
 
-
-            // ★バニラベッドを「両方」ドロップなしで削除（重要：HEAD→FOOT）
-            int killFlags = Block.NOTIFY_ALL | Block.SKIP_DROPS;
-            world.setBlockState(vanillaHeadPos, Blocks.AIR.getDefaultState(), killFlags);
-            world.setBlockState(vanillaFootPos, Blocks.AIR.getDefaultState(), killFlags);
+            // バニラベッドを両方ドロップなしで削除（HEAD → FOOT）
+            int killFlags = Block.UPDATE_ALL | Block.UPDATE_SUPPRESS_DROPS;
+            world.setBlock(vanillaHeadPos, Blocks.AIR.defaultBlockState(), killFlags);
+            world.setBlock(vanillaFootPos, Blocks.AIR.defaultBlockState(), killFlags);
 
             // OnlyBed 設置
-            BlockState footState = BlueStudentMod.ONLY_BED_BLOCK.getDefaultState()
-                    .with(OnlyBedBlock.FACING, onlyFacing)
-                    .with(OnlyBedBlock.PART, BedPart.FOOT)
-                    .with(OnlyBedBlock.STUDENT, linking);
+            BlockState footState = ((Block) BlueStudentMod.ONLY_BED_BLOCK).defaultBlockState();
+            footState = footState.setValue(OnlyBedBlock.FACING, onlyFacing);
+            footState = footState.setValue(OnlyBedBlock.PART, BedPart.FOOT);
+            footState = footState.setValue(OnlyBedBlock.STUDENT, linking);
 
-            BlockState headState = footState.with(OnlyBedBlock.PART, BedPart.HEAD);
 
-            world.setBlockState(vanillaFootPos, footState, Block.NOTIFY_ALL);
-            world.setBlockState(onlyHeadPos, headState, Block.NOTIFY_ALL);
+            BlockState headState = footState.setValue(OnlyBedBlock.PART, BedPart.HEAD);
 
-            // ★永続化込みで保存
-            BedLinkManager.setBedPosAndPersist((ServerWorld) world, player.getUuid(), linking, vanillaFootPos);
+            world.setBlock(vanillaFootPos, footState, Block.UPDATE_ALL);
+            world.setBlock(onlyHeadPos, headState, Block.UPDATE_ALL);
 
-            BedLinkManager.clearLinking(player.getUuid());
-            player.sendMessage(Text.literal("Linked bed -> " + linking.asString()), false);
-            return ActionResult.SUCCESS;
+            // 永続化込みで保存
+            BedLinkManager.setBedPosAndPersist(serverLevel, player.getUUID(), linking, vanillaFootPos);
 
+            BedLinkManager.clearLinking(player.getUUID());
+            player.sendSystemMessage(Component.literal("Linked bed -> " + linking.asString()));
+
+            return InteractionResult.SUCCESS;
         });
     }
 }
