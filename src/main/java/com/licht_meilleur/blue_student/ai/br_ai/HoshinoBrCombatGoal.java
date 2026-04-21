@@ -75,7 +75,7 @@ public class HoshinoBrCombatGoal extends Goal {
     public HoshinoBrCombatGoal(PathfinderMob mob, IStudentEntity student) {
         this.mob = mob;
         this.student = student;
-        this.setFlags(EnumSet.of(Flag.MOVE));
+        this.setFlags(EnumSet.noneOf(Flag.class));
     }
 
     private boolean isBr() {
@@ -250,7 +250,7 @@ public class HoshinoBrCombatGoal extends Goal {
             return;
         }
 
-        StudentBrAction next = selectByDistance(dist, mainSpec);
+        StudentBrAction next = selectActionSmart(dist, canSee);
 
         if (next == StudentBrAction.NONE) {
             stopAction();
@@ -264,29 +264,100 @@ public class HoshinoBrCombatGoal extends Goal {
         student.requestLookTarget(target, 80, 2);
     }
 
-    private StudentBrAction selectByDistance(double dist, WeaponSpec mainSpec) {
-        if (dist > SHOTGUN_MAX && dist <= 12.0 && cdTackle <= 0) return StudentBrAction.GUARD_TACKLE;
+    private StudentBrAction selectActionSmart(double dist, boolean canSee) {
+        java.util.Map<StudentBrAction, Double> score = new java.util.EnumMap<>(StudentBrAction.class);
 
-        if (dist <= TACKLE_RANGE && cdTackle <= 0) return StudentBrAction.GUARD_TACKLE;
-        if (dist <= BASH_RANGE && cdBash <= 0) return StudentBrAction.GUARD_BASH;
-
-        if (dist <= EVADE_DIST && cdDodge <= 0) return StudentBrAction.DODGE_SHOT;
-
-        if (dist >= SHOTGUN_MIN && dist <= SHOTGUN_MAX) {
-            if (cdSide <= 0 && cdSub <= 0 && mob.getRandom().nextFloat() < 0.22f) {
-                return (mob.tickCount % 2 == 0) ? StudentBrAction.LEFT_SIDE_SUB_SHOT : StudentBrAction.RIGHT_SIDE_SUB_SHOT;
-            }
+        // 初期値
+        for (StudentBrAction a : StudentBrAction.values()) {
+            score.put(a, 0.0);
         }
 
-        if (student.isReloading()) return StudentBrAction.SUB_RELOAD_SHOT;
+        boolean close = dist < 3.0;
+        boolean mid = dist >= 3.0 && dist <= 8.5;
+        boolean far = dist > 8.5;
 
-        if (dist >= SHOTGUN_MIN && dist <= SHOTGUN_MAX) {
-            if (cdMain <= 0) return StudentBrAction.MAIN_SHOT;
-            if (cdSub <= 0) return StudentBrAction.SUB_SHOT;
-            return StudentBrAction.NONE;
+        boolean danger = close && canSee;
+
+        // ===== DODGE =====
+        double sDodge = 10;
+        if (danger) sDodge += 20;
+        if (!canSee) sDodge -= 10;
+        if (cdDodge > 0) sDodge -= 100;
+        if (current == StudentBrAction.DODGE_SHOT) sDodge -= 25;
+        score.put(StudentBrAction.DODGE_SHOT, sDodge);
+
+        // ===== SIDE =====
+        double sSideL = 8;
+        double sSideR = 8;
+        if (mid) {
+            sSideL += 10;
+            sSideR += 10;
+        }
+        if (!canSee) {
+            sSideL += 6;
+            sSideR += 6;
+        }
+        if (cdSide > 0) {
+            sSideL -= 100;
+            sSideR -= 100;
+        }
+        if (current == StudentBrAction.LEFT_SIDE_SUB_SHOT) sSideL -= 20;
+        if (current == StudentBrAction.RIGHT_SIDE_SUB_SHOT) sSideR -= 20;
+
+        score.put(StudentBrAction.LEFT_SIDE_SUB_SHOT, sSideL);
+        score.put(StudentBrAction.RIGHT_SIDE_SUB_SHOT, sSideR);
+
+        // ===== MAIN =====
+        double sMain = 7;
+        if (mid) sMain += 15;
+        if (!canSee) sMain -= 10;
+        if (cdMain > 0) sMain -= 100;
+        if (close) sMain -= 10;
+        score.put(StudentBrAction.MAIN_SHOT, sMain);
+
+        // ===== SUB =====
+        double sSub = 6;
+        if (mid) sSub += 8;
+        if (cdSub > 0) sSub -= 100;
+        score.put(StudentBrAction.SUB_SHOT, sSub);
+
+        // ===== SUB RELOAD =====
+        double sReload = 5;
+        if (student.getAmmoInMag() <= 1) sReload += 20;
+        if (close) sReload -= 15;
+        score.put(StudentBrAction.SUB_RELOAD_SHOT, sReload);
+
+        // ===== TACKLE =====
+        double sTackle = 6;
+        if (close) sTackle += 10;
+        if (cdTackle > 0) sTackle -= 100;
+        score.put(StudentBrAction.GUARD_TACKLE, sTackle);
+
+        // ===== BASH =====
+        double sBash = 6;
+        if (close) sBash += 12;
+        if (cdBash > 0) sBash -= 100;
+        score.put(StudentBrAction.GUARD_BASH, sBash);
+
+        return pickWeighted(score);
+    }
+
+    private StudentBrAction pickWeighted(java.util.Map<StudentBrAction, Double> score) {
+        double total = 0;
+
+        for (double v : score.values()) {
+            if (v > 0) total += v;
         }
 
-        if (cdSub <= 0) return StudentBrAction.SUB_SHOT;
+        if (total <= 0) return StudentBrAction.NONE;
+
+        double r = mob.getRandom().nextDouble() * total;
+
+        for (var e : score.entrySet()) {
+            double v = Math.max(0, e.getValue());
+            r -= v;
+            if (r <= 0) return e.getKey();
+        }
 
         return StudentBrAction.NONE;
     }

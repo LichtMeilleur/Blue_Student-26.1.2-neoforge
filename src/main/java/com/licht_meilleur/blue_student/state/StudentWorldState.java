@@ -1,5 +1,6 @@
 package com.licht_meilleur.blue_student.state;
 
+import com.licht_meilleur.blue_student.BlueStudentMod;
 import com.licht_meilleur.blue_student.student.StudentForm;
 import com.licht_meilleur.blue_student.student.StudentId;
 import com.mojang.serialization.Codec;
@@ -211,14 +212,17 @@ public class StudentWorldState extends SavedData {
 
     public StudentForm getForm(StudentId sid) {
         StudentData d = getData(sid);
-        if (d == null) return StudentForm.NORMAL;
-        return StudentForm.fromKey(d.form);
-    }
+        StudentForm form = (d == null) ? StudentForm.NORMAL : StudentForm.fromKey(d.form);
 
+
+        return form;
+    }
     public void setForm(StudentId sid, StudentForm form) {
         StudentData d = getData(sid);
         if (d == null) return;
+
         d.form = form.asString();
+
         setDirty();
     }
 

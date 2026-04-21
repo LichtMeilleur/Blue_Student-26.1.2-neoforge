@@ -49,7 +49,7 @@ public class StudentScreen extends AbstractContainerScreen<StudentScreenHandler>
     private static final int EQUIP_BG_SIZE = 36;
 
     public StudentScreen(StudentScreenHandler handler, Inventory inventory, Component title) {
-        super(handler, inventory, title);
+        super(handler, inventory, title, BG_W, BG_H);
         this.titleLabelX = 9999;
         this.titleLabelY = 9999;
         this.inventoryLabelX = 9999;
@@ -239,4 +239,20 @@ public class StudentScreen extends AbstractContainerScreen<StudentScreenHandler>
         StudentAiMode mode = aiList[index];
         this.sendMode(mode.id);
     }
+    private boolean isInsideFullGui(double mouseX, double mouseY) {
+        return mouseX >= this.leftPos
+                && mouseY >= this.topPos
+                && mouseX < this.leftPos + BG_W
+                && mouseY < this.topPos + BG_H;
+    }
+    @Override
+    protected boolean hasClickedOutside(double mx, double my, int xo, int yo) {
+        return mx < this.leftPos
+                || my < this.topPos
+                || mx >= this.leftPos + BG_W
+                || my >= this.topPos + BG_H;
+    }
+
+
+
 }

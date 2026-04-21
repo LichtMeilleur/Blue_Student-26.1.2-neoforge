@@ -1193,6 +1193,8 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
         tag.putInt("LifeState", lifeState.ordinal());
         tag.putInt("LifeTimer", lifeTimer);
 
+
+
         if (respawnBedFoot != null) tag.putLong("RespawnBedFoot", respawnBedFoot.asLong());
         if (respawnSafePos != null) tag.putLong("RespawnSafePos", respawnSafePos.asLong());
 
@@ -1222,6 +1224,8 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
             entityData.set(FORM_ID, tag.getInt("StudentForm").orElse(0));
         }
 
+
+
         dimTransferCooldown = tag.getInt("DimTransferCooldown").orElse(0);
         dimTransferQueued = tag.getBoolean("DimTransferQueued").orElse(false);
         forcedSecurityBecauseOwnerOffline = tag.getBoolean("ForcedSecurityOffline").orElse(false);
@@ -1249,7 +1253,9 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
         }
 
         if (tag.contains("StudentInv")) {
-            studentInventory.readNbt(tag.getCompound("StudentInv"));
+            studentInventory.readNbt(
+                    tag.getCompound("StudentInv").orElse(new CompoundTag())
+            );
         }
 
         ammoInMag = tag.contains("Ammo")
@@ -1383,12 +1389,7 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
 
         BlockPos bed = st.getBed(getStudentId());
 
-        BlueStudentMod.LOGGER.info(
-                "[BlueStudent] startBedRespawn student={} owner={} bed={}",
-                getStudentId().asString(),
-                ownerUuid,
-                StudentWorldState.get(sw.getServer()).getBed(getStudentId())
-        );
+
 
         if (bed == null && ownerUuid != null) {
             bed = BedLinkManager.getBedPos(ownerUuid, getStudentId());
@@ -1870,15 +1871,28 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
         if (!(level() instanceof ServerLevel sw)) return;
 
         ItemStack equip = studentInventory.getBrEquipStack();
-        StudentForm desired = StudentEquipments.isBrEquipped(getStudentId(), equip)
-                ? StudentForm.BR
-                : StudentForm.NORMAL;
+        StudentWorldState state = StudentWorldState.get(sw);
+
+        StudentForm stateForm = state.getForm(getStudentId());
+        StudentForm desired;
+
+        if (!equip.isEmpty()) {
+            desired = StudentEquipments.isBrEquipped(getStudentId(), equip)
+                    ? StudentForm.BR
+                    : StudentForm.NORMAL;
+        } else {
+            desired = stateForm;
+        }
+
+
 
         if (getForm() != desired) {
+
+
+
             setForm(desired);
             applyFormStatsAndAi(desired);
-
-            StudentWorldState.get(sw).setForm(getStudentId(), desired);
+            state.setForm(getStudentId(), desired);
         }
     }
 

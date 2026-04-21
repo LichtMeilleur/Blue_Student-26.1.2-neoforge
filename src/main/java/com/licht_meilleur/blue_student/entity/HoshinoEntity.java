@@ -9,7 +9,7 @@ import com.licht_meilleur.blue_student.ai.StudentRideWithOwnerGoal;
 import com.licht_meilleur.blue_student.ai.StudentSecurityGoal;
 import com.licht_meilleur.blue_student.ai.StudentStuckEscapeGoal;
 import com.licht_meilleur.blue_student.ai.br_ai.HoshinoBrCombatGoal;
-import com.licht_meilleur.blue_student.ai.br_ai.HoshinoBrEvadeGoal;
+import com.licht_meilleur.blue_student.ai.br_ai.HoshinoBrMoveGoal;
 import com.licht_meilleur.blue_student.ai.only.HoshinoGuardGoal;
 import com.licht_meilleur.blue_student.bed.BedLinkManager;
 import com.licht_meilleur.blue_student.student.StudentAiMode;
@@ -162,10 +162,10 @@ public class HoshinoEntity extends AbstractStudentEntity {
         this.goalSelector.addGoal(1, new FloatGoal(this));
 
         this.goalSelector.addGoal(2, new StudentAimGoal(this, this));
-        this.goalSelector.addGoal(3, new HoshinoBrEvadeGoal(this, this));
+        this.goalSelector.addGoal(3, new HoshinoBrCombatGoal(this, this));
         this.goalSelector.addGoal(4, new HoshinoGuardGoal(this, this));
         this.goalSelector.addGoal(5, new StudentEvadeGoal(this, this));
-        this.goalSelector.addGoal(7, new HoshinoBrCombatGoal(this, this));
+        this.goalSelector.addGoal(7, new HoshinoBrMoveGoal(this, this));
         this.goalSelector.addGoal(8, new StudentCombatGoal(this, this));
         this.goalSelector.addGoal(9, new StudentStuckEscapeGoal(this, this));
 
