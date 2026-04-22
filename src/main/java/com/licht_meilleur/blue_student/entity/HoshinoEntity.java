@@ -162,15 +162,17 @@ public class HoshinoEntity extends AbstractStudentEntity {
         this.goalSelector.addGoal(1, new FloatGoal(this));
 
         this.goalSelector.addGoal(2, new StudentAimGoal(this, this));
-        this.goalSelector.addGoal(3, new HoshinoBrCombatGoal(this, this));
-        this.goalSelector.addGoal(4, new HoshinoGuardGoal(this, this));
-        this.goalSelector.addGoal(5, new StudentEvadeGoal(this, this));
-        this.goalSelector.addGoal(7, new HoshinoBrMoveGoal(this, this));
-        this.goalSelector.addGoal(8, new StudentCombatGoal(this, this));
-        this.goalSelector.addGoal(9, new StudentStuckEscapeGoal(this, this));
 
-        this.goalSelector.addGoal(10, new StudentFollowGoal(this, this, 1.1));
-        this.goalSelector.addGoal(11, new StudentSecurityGoal(this, this,
+        this.goalSelector.addGoal(3, new HoshinoBrCombatGoal(this, this)); // MOVEなし
+        this.goalSelector.addGoal(4, new HoshinoBrMoveGoal(this, this));   // MOVEあり
+
+        this.goalSelector.addGoal(5, new HoshinoGuardGoal(this, this));
+        this.goalSelector.addGoal(6, new StudentEvadeGoal(this, this));
+        this.goalSelector.addGoal(7, new StudentCombatGoal(this, this));
+        this.goalSelector.addGoal(8, new StudentStuckEscapeGoal(this, this));
+
+        this.goalSelector.addGoal(9, new StudentFollowGoal(this, this, 1.1));
+        this.goalSelector.addGoal(10, new StudentSecurityGoal(this, this,
                 new StudentSecurityGoal.ISecurityPosProvider() {
                     @Override
                     public BlockPos getSecurityPos() {
@@ -183,7 +185,7 @@ public class HoshinoEntity extends AbstractStudentEntity {
                     }
                 },
                 1.0));
-        this.goalSelector.addGoal(12, new StudentEatGoal(this, this));
+        this.goalSelector.addGoal(11, new StudentEatGoal(this, this));
     }
 
     @Override

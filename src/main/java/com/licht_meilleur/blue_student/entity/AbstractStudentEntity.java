@@ -999,12 +999,19 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
         if (!onGround() && getDeltaMovement().y < -0.08) return FALL;
 
         if (getForm() == StudentForm.BR) {
+            if (!onGround() && getDeltaMovement().y < -0.08) {
+                return FALL;
+            }
+
             StudentBrAction action = getBrActionForAnimationClient();
             if (action != StudentBrAction.NONE) {
                 RawAnimation brAnim = getBrAnimationForAction(action);
-                if (brAnim != null) return brAnim;
+                if (brAnim != null) {
+                    return brAnim;
+                }
             }
-            return isActuallyMoving() ? RUN : IDLE;
+
+            return isActuallyMovingForAnim() ? RUN : IDLE;
         }
 
         if (clientShotTicks > 0 || clientShotHoldTicks > 0) {
@@ -1020,6 +1027,21 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
         if (clientReloadTicks > 0) return RELOAD;
 
         return isActuallyMoving() ? RUN : IDLE;
+    }
+
+    private boolean isActuallyMovingForAnim() {
+        Vec3 v = getDeltaMovement();
+        double horizontal = v.x * v.x + v.z * v.z;
+
+        if (horizontal > 0.0004) {
+            return true;
+        }
+
+        if (getNavigation() != null && !getNavigation().isDone()) {
+            return true;
+        }
+
+        return false;
     }
 
 

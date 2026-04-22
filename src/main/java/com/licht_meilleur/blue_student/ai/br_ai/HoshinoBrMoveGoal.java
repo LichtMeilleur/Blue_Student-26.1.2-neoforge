@@ -3,6 +3,7 @@ package com.licht_meilleur.blue_student.ai.br_ai;
 import com.licht_meilleur.blue_student.entity.AbstractStudentEntity;
 import com.licht_meilleur.blue_student.student.IStudentEntity;
 import com.licht_meilleur.blue_student.student.StudentAiMode;
+import com.licht_meilleur.blue_student.student.StudentBrAction;
 import com.licht_meilleur.blue_student.student.StudentForm;
 import com.licht_meilleur.blue_student.weapon.WeaponSpec;
 import com.licht_meilleur.blue_student.weapon.WeaponSpecs;
@@ -26,6 +27,7 @@ public class HoshinoBrMoveGoal extends Goal {
     private LivingEntity target;
     private int repathCooldown = 0;
     private int strafeSwitchCooldown = 0;
+    private int holdTicks = 0;
 
     private MoveIntent currentIntent = MoveIntent.HOLD;
     private boolean strafeLeft = true;
@@ -37,16 +39,11 @@ public class HoshinoBrMoveGoal extends Goal {
     private static final double SPEED_RETREAT = 1.35;
     private static final double SPEED_APPROACH = 1.25;
     private static final double SPEED_STRAFE = 1.10;
-    private static final double SPEED_LOS = 1.15;
 
-    // Hoshino BR の基準距離
     private static final double PREFERRED_MIN = 4.0;
     private static final double PREFERRED_MAX = 8.5;
 
-    // 危険距離
     private static final double EMERGENCY_RETREAT_DIST = 2.4;
-
-    // 遠すぎると詰める
     private static final double FORCE_APPROACH_DIST = 10.0;
 
     public HoshinoBrMoveGoal(PathfinderMob mob, IStudentEntity student) {
@@ -55,7 +52,7 @@ public class HoshinoBrMoveGoal extends Goal {
         this.setFlags(EnumSet.of(Flag.MOVE));
     }
 
-    private enum MoveIntent {
+    public enum MoveIntent {
         RETREAT,
         APPROACH,
         STRAFE_LEFT,
@@ -105,6 +102,7 @@ public class HoshinoBrMoveGoal extends Goal {
     public void start() {
         repathCooldown = 0;
         strafeSwitchCooldown = 0;
+        holdTicks = 0;
         currentIntent = MoveIntent.HOLD;
         strafeLeft = mob.getRandom().nextBoolean();
     }
@@ -113,6 +111,7 @@ public class HoshinoBrMoveGoal extends Goal {
     public void stop() {
         target = null;
         currentIntent = MoveIntent.HOLD;
+        holdTicks = 0;
         mob.getNavigation().stop();
     }
 
@@ -123,57 +122,89 @@ public class HoshinoBrMoveGoal extends Goal {
 
         if (repathCooldown > 0) repathCooldown--;
         if (strafeSwitchCooldown > 0) strafeSwitchCooldown--;
+        if (holdTicks > 0) holdTicks--;
 
         final double dist = mob.distanceTo(target);
         final boolean canSee = mob.getSensing().hasLineOfSight(target);
 
-        // 体と視線の向きは target 基準
         student.requestLookTarget(target, 80, 2);
 
         currentIntent = decideIntent(dist, canSee);
 
         switch (currentIntent) {
-            case RETREAT -> moveRetreat();
-            case APPROACH -> moveApproach();
-            case STRAFE_LEFT -> moveStrafe(true);
-            case STRAFE_RIGHT -> moveStrafe(false);
-            case HOLD -> mob.getNavigation().stop();
+            case RETREAT -> {
+                moveRetreat();
+                requestMoveAnim(false);
+            }
+            case APPROACH -> {
+                moveApproach();
+                requestMoveAnim(false);
+            }
+            case STRAFE_LEFT -> {
+                moveStrafe(true);
+                requestMoveAnim(true);
+            }
+            case STRAFE_RIGHT -> {
+                moveStrafe(false);
+                requestMoveAnim(false);
+            }
+            case HOLD -> {
+                mob.getNavigation().stop();
+                // HOLD は移動アニメを握らない
+            }
         }
     }
 
     private MoveIntent decideIntent(double dist, boolean canSee) {
-        // 緊急距離なら問答無用で離れる
         if (dist <= EMERGENCY_RETREAT_DIST) {
+            holdTicks = 0;
             return MoveIntent.RETREAT;
         }
 
-        // 視線が切れていて近いなら横移動で見通しを作る
         if (!canSee) {
             if (dist < 6.0) {
                 maybeFlipStrafe();
+                holdTicks = 0;
                 return strafeLeft ? MoveIntent.STRAFE_LEFT : MoveIntent.STRAFE_RIGHT;
             }
+            holdTicks = 0;
             return MoveIntent.APPROACH;
         }
 
-        // 遠すぎるなら詰める
         if (dist >= FORCE_APPROACH_DIST) {
+            holdTicks = 0;
             return MoveIntent.APPROACH;
         }
 
-        // 近すぎるなら少し離れる
         if (dist < PREFERRED_MIN) {
+            holdTicks = 0;
             return MoveIntent.RETREAT;
         }
 
-        // 中距離の中でも少し動いて的をずらす
+        // 中距離は常時strafeしない。かなりの割合で HOLD を混ぜる
         if (dist >= PREFERRED_MIN && dist <= PREFERRED_MAX) {
+            if (holdTicks > 0) {
+                return MoveIntent.HOLD;
+            }
+
+            float r = mob.getRandom().nextFloat();
+
+            // 55% HOLD, 45% STRAFE
+            if (r < 0.55f) {
+                holdTicks = 8 + mob.getRandom().nextInt(8);
+                return MoveIntent.HOLD;
+            }
+
             maybeFlipStrafe();
             return strafeLeft ? MoveIntent.STRAFE_LEFT : MoveIntent.STRAFE_RIGHT;
         }
 
-        // やや遠めなら少しだけ詰める
         if (dist > PREFERRED_MAX) {
+            // 少し遠めでも常に詰めず、たまに止まる
+            if (mob.getRandom().nextFloat() < 0.25f) {
+                holdTicks = 6 + mob.getRandom().nextInt(6);
+                return MoveIntent.HOLD;
+            }
             return MoveIntent.APPROACH;
         }
 
@@ -191,6 +222,15 @@ public class HoshinoBrMoveGoal extends Goal {
                 + mob.getRandom().nextInt(STRAFE_SWITCH_MAX - STRAFE_SWITCH_MIN + 1);
     }
 
+    private void requestMoveAnim(boolean left) {
+        // 移動中だけ BR 移動アニメを短く握る
+        student.requestBrAction(left ? StudentBrAction.LEFT_MOVE : StudentBrAction.RIGHT_MOVE, 3);
+
+        if (mob instanceof AbstractStudentEntity ase) {
+            ase.requestLookMoveDir(80, 3);
+        }
+    }
+
     private void moveRetreat() {
         if (repathCooldown > 0) return;
         repathCooldown = REPATH_INTERVAL;
@@ -203,7 +243,6 @@ public class HoshinoBrMoveGoal extends Goal {
         Vec3 dir = away.normalize();
         Vec3 desired = mob.position().add(dir.scale(6.0));
 
-        // 少し横にも逃がして、真後ろ一直線を避ける
         Vec3 side = new Vec3(-dir.z, 0, dir.x);
         double sideOffset = (mob.getRandom().nextBoolean() ? 1.0 : -1.0) * 2.0;
         desired = desired.add(side.scale(sideOffset));
@@ -212,10 +251,6 @@ public class HoshinoBrMoveGoal extends Goal {
         if (pos == null) pos = desired;
 
         mob.getNavigation().moveTo(pos.x, pos.y, pos.z, SPEED_RETREAT);
-
-        if (mob instanceof AbstractStudentEntity ase) {
-            ase.requestLookMoveDir(80, 4);
-        }
     }
 
     private void moveApproach() {
@@ -240,20 +275,14 @@ public class HoshinoBrMoveGoal extends Goal {
                 ? new Vec3(-dir.z, 0, dir.x)
                 : new Vec3(dir.z, 0, -dir.x);
 
-        double len = 3.0 + mob.getRandom().nextDouble() * 1.5;
+        double len = 2.25 + mob.getRandom().nextDouble() * 1.0;
         Vec3 desired = mob.position().add(side.normalize().scale(len));
-
-        // 少しだけ target 方向にも寄せて、完全な真横逃げになりすぎないようにする
-        desired = desired.add(dir.scale(0.8));
+        desired = desired.add(dir.scale(0.55));
 
         Vec3 pos = DefaultRandomPos.getPosTowards(mob, 10, 6, desired, Math.PI / 2);
         if (pos == null) pos = desired;
 
         mob.getNavigation().moveTo(pos.x, pos.y, pos.z, SPEED_STRAFE);
-
-        if (mob instanceof AbstractStudentEntity ase) {
-            ase.requestLookMoveDir(80, 4);
-        }
     }
 
     private LivingEntity findNearestHostile() {

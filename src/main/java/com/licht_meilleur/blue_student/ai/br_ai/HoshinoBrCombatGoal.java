@@ -1,5 +1,6 @@
 package com.licht_meilleur.blue_student.ai.br_ai;
 
+import com.licht_meilleur.blue_student.BlueStudentMod;
 import com.licht_meilleur.blue_student.entity.AbstractStudentEntity;
 import com.licht_meilleur.blue_student.student.IStudentEntity;
 import com.licht_meilleur.blue_student.student.StudentAiMode;
@@ -11,7 +12,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.goal.Goal;
-import net.minecraft.world.entity.ai.navigation.PathNavigation;
 import net.minecraft.world.entity.ai.util.DefaultRandomPos;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.level.pathfinder.Path;
@@ -19,8 +19,10 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 
 public class HoshinoBrCombatGoal extends Goal {
 
@@ -114,7 +116,7 @@ public class HoshinoBrCombatGoal extends Goal {
     public void start() {
         repathCooldown = 0;
         clearCds();
-        stopAction();
+        stopActionHard();
         mob.getNavigation().stop();
 
         sideDashTicksLeft = 0;
@@ -132,7 +134,7 @@ public class HoshinoBrCombatGoal extends Goal {
         target = null;
         mob.setTarget(null);
         mob.getNavigation().stop();
-        stopAction();
+        stopActionHard();
         clearCds();
         noSeeTicks = 0;
         prevDist = 9999.0;
@@ -141,6 +143,11 @@ public class HoshinoBrCombatGoal extends Goal {
     @Override
     public void tick() {
         if (!(mob.level() instanceof ServerLevel serverLevel)) return;
+
+        if (!mob.onGround() && mob.getDeltaMovement().y < -0.08) {
+            stopActionSoft();
+            return;
+        }
 
         tickCds();
         if (hitReactCooldown > 0) hitReactCooldown--;
@@ -152,7 +159,7 @@ public class HoshinoBrCombatGoal extends Goal {
             target = findTarget();
             mob.setTarget(target);
             mob.getNavigation().stop();
-            stopAction();
+            stopActionHard();
             prevDist = 9999.0;
             return;
         }
@@ -160,7 +167,7 @@ public class HoshinoBrCombatGoal extends Goal {
         final double dist = mob.distanceTo(target);
         final boolean canSee = mob.getSensing().hasLineOfSight(target);
 
-        aliceLikeLook(target);
+        student.requestLookTarget(target, 80, 2);
 
         boolean crossedDodgeBand = (prevDist > 3.0 && dist <= 2.0);
         prevDist = dist;
@@ -171,13 +178,16 @@ public class HoshinoBrCombatGoal extends Goal {
                 && actionLockTicks <= 0
                 && hitReactCooldown <= 0
                 && current != StudentBrAction.DODGE_SHOT) {
-
             startAction(StudentBrAction.DODGE_SHOT);
             return;
         }
 
-        final WeaponSpec mainSpec = WeaponSpecs.forStudent(student.getStudentId(), StudentForm.BR, IStudentEntity.FireChannel.MAIN);
-        final WeaponSpec subSpec = WeaponSpecs.forStudent(student.getStudentId(), StudentForm.BR, IStudentEntity.FireChannel.SUB_L);
+        final WeaponSpec mainSpec = WeaponSpecs.forStudent(
+                student.getStudentId(), StudentForm.BR, IStudentEntity.FireChannel.MAIN
+        );
+        final WeaponSpec subSpec = WeaponSpecs.forStudent(
+                student.getStudentId(), StudentForm.BR, IStudentEntity.FireChannel.SUB_L
+        );
 
         if (!canSee) noSeeTicks++;
         else noSeeTicks = 0;
@@ -186,7 +196,7 @@ public class HoshinoBrCombatGoal extends Goal {
             target = findTargetPreferVisibleAndPath();
             mob.setTarget(target);
             mob.getNavigation().stop();
-            stopAction();
+            stopActionHard();
             noSeeTicks = 0;
             return;
         }
@@ -197,35 +207,27 @@ public class HoshinoBrCombatGoal extends Goal {
                 target = better;
                 mob.setTarget(target);
                 mob.getNavigation().stop();
-                stopAction();
+                stopActionHard();
             }
         }
 
         if (!mainSpec.infiniteAmmo && student.getAmmoInMag() <= 0) {
-            if (dist < EVADE_DIST) {
-                moveAwayFromTarget(SPEED_CHASE);
-                stopAction();
-                return;
-            } else {
-                if (!student.isReloading()) student.startReload(mainSpec);
-                startAction(StudentBrAction.SUB_RELOAD_SHOT);
-                return;
+            if (!student.isReloading()) {
+                student.startReload(mainSpec);
             }
+            startAction(StudentBrAction.SUB_RELOAD_SHOT);
+            return;
         }
 
         if (!canSee) {
-            if (dist < 6.0) {
-                moveSideToFindLoS();
-            } else {
-                moveTowardTarget(SPEED_AIM);
-            }
-            stopAction();
+            stopActionSoft();
+            requestMoveActionFromNavigation();
             return;
         }
 
         if (dist >= APPROACH_IF_OVER) {
-            moveTowardTarget(SPEED_CHASE);
-            stopAction();
+            stopActionSoft();
+            requestMoveActionFromNavigation();
             return;
         }
 
@@ -245,118 +247,113 @@ public class HoshinoBrCombatGoal extends Goal {
         if (actionLockTicks > 0) {
             if (current != StudentBrAction.NONE) {
                 student.requestBrAction(current, 2);
+            } else {
+                requestMoveActionFromNavigation();
             }
-            mob.getNavigation().stop();
             return;
         }
 
         StudentBrAction next = selectActionSmart(dist, canSee);
 
         if (next == StudentBrAction.NONE) {
-            stopAction();
+            stopActionSoft();
+            requestMoveActionFromNavigation();
             return;
         }
 
         startAction(next);
     }
 
-    private void aliceLikeLook(LivingEntity target) {
-        student.requestLookTarget(target, 80, 2);
-    }
-
     private StudentBrAction selectActionSmart(double dist, boolean canSee) {
-        java.util.Map<StudentBrAction, Double> score = new java.util.EnumMap<>(StudentBrAction.class);
-
-        // 初期値
+        Map<StudentBrAction, Double> score = new EnumMap<>(StudentBrAction.class);
         for (StudentBrAction a : StudentBrAction.values()) {
             score.put(a, 0.0);
         }
 
-        boolean close = dist < 3.0;
-        boolean mid = dist >= 3.0 && dist <= 8.5;
-        boolean far = dist > 8.5;
+        boolean close = dist <= BASH_RANGE;
+        boolean mid = dist >= SHOTGUN_MIN && dist <= SHOTGUN_MAX;
+        boolean far = dist > SHOTGUN_MAX;
 
-        boolean danger = close && canSee;
+        boolean danger = dist <= EVADE_DIST && canSee;
 
-        // ===== DODGE =====
-        double sDodge = 10;
-        if (danger) sDodge += 20;
-        if (!canSee) sDodge -= 10;
-        if (cdDodge > 0) sDodge -= 100;
-        if (current == StudentBrAction.DODGE_SHOT) sDodge -= 25;
+        double sDodge = 8.0;
+        if (danger) sDodge += 24.0;
+        if (!canSee) sDodge -= 10.0;
+        if (cdDodge > 0) sDodge -= 100.0;
+        if (current == StudentBrAction.DODGE_SHOT) sDodge -= 16.0;
         score.put(StudentBrAction.DODGE_SHOT, sDodge);
 
-        // ===== SIDE =====
-        double sSideL = 8;
-        double sSideR = 8;
-        if (mid) {
-            sSideL += 10;
-            sSideR += 10;
-        }
-        if (!canSee) {
-            sSideL += 6;
-            sSideR += 6;
-        }
-        if (cdSide > 0) {
-            sSideL -= 100;
-            sSideR -= 100;
-        }
-        if (current == StudentBrAction.LEFT_SIDE_SUB_SHOT) sSideL -= 20;
-        if (current == StudentBrAction.RIGHT_SIDE_SUB_SHOT) sSideR -= 20;
+        double sBash = 6.0;
+        if (dist <= BASH_RANGE) sBash += 18.0;
+        if (cdBash > 0) sBash -= 100.0;
+        if (!canSee) sBash -= 8.0;
+        score.put(StudentBrAction.GUARD_BASH, sBash);
 
-        score.put(StudentBrAction.LEFT_SIDE_SUB_SHOT, sSideL);
-        score.put(StudentBrAction.RIGHT_SIDE_SUB_SHOT, sSideR);
-
-        // ===== MAIN =====
-        double sMain = 7;
-        if (mid) sMain += 15;
-        if (!canSee) sMain -= 10;
-        if (cdMain > 0) sMain -= 100;
-        if (close) sMain -= 10;
-        score.put(StudentBrAction.MAIN_SHOT, sMain);
-
-        // ===== SUB =====
-        double sSub = 6;
-        if (mid) sSub += 8;
-        if (cdSub > 0) sSub -= 100;
-        score.put(StudentBrAction.SUB_SHOT, sSub);
-
-        // ===== SUB RELOAD =====
-        double sReload = 5;
-        if (student.getAmmoInMag() <= 1) sReload += 20;
-        if (close) sReload -= 15;
-        score.put(StudentBrAction.SUB_RELOAD_SHOT, sReload);
-
-        // ===== TACKLE =====
-        double sTackle = 6;
-        if (close) sTackle += 10;
-        if (cdTackle > 0) sTackle -= 100;
+        double sTackle = 5.0;
+        if (dist <= TACKLE_RANGE) sTackle += 12.0;
+        if (far && dist <= 12.0) sTackle += 10.0;
+        if (cdTackle > 0) sTackle -= 100.0;
+        if (!canSee) sTackle -= 8.0;
         score.put(StudentBrAction.GUARD_TACKLE, sTackle);
 
-        // ===== BASH =====
-        double sBash = 6;
-        if (close) sBash += 12;
-        if (cdBash > 0) sBash -= 100;
-        score.put(StudentBrAction.GUARD_BASH, sBash);
+        double sMain = 7.0;
+        if (mid) sMain += 18.0;
+        if (close) sMain -= 12.0;
+        if (!canSee) sMain -= 12.0;
+        if (cdMain > 0) sMain -= 100.0;
+        score.put(StudentBrAction.MAIN_SHOT, sMain);
+
+        double sSub = 7.0;
+        if (mid) sSub += 12.0;
+        if (close) sSub += 4.0;
+        if (cdSub > 0) sSub -= 100.0;
+        if (!canSee) sSub -= 6.0;
+        score.put(StudentBrAction.SUB_SHOT, sSub);
+
+        double sReload = 4.0;
+        if (student.getAmmoInMag() <= 1) sReload += 22.0;
+        if (close) sReload -= 10.0;
+        score.put(StudentBrAction.SUB_RELOAD_SHOT, sReload);
+
+        double sSideL = 6.0;
+        double sSideR = 6.0;
+        if (mid) {
+            sSideL += 12.0;
+            sSideR += 12.0;
+        }
+        if (cdSide > 0 || cdSub > 0) {
+            sSideL -= 100.0;
+            sSideR -= 100.0;
+        }
+        if (!canSee) {
+            sSideL += 3.0;
+            sSideR += 3.0;
+        }
+        if (current == StudentBrAction.LEFT_SIDE_SUB_SHOT) sSideL -= 10.0;
+        if (current == StudentBrAction.RIGHT_SIDE_SUB_SHOT) sSideR -= 10.0;
+        score.put(StudentBrAction.LEFT_SIDE_SUB_SHOT, sSideL);
+        score.put(StudentBrAction.RIGHT_SIDE_SUB_SHOT, sSideR);
 
         return pickWeighted(score);
     }
 
-    private StudentBrAction pickWeighted(java.util.Map<StudentBrAction, Double> score) {
-        double total = 0;
-
+    private StudentBrAction pickWeighted(Map<StudentBrAction, Double> score) {
+        double total = 0.0;
         for (double v : score.values()) {
-            if (v > 0) total += v;
+            if (v > 0.0) total += v;
         }
 
-        if (total <= 0) return StudentBrAction.NONE;
+        if (total <= 0.0) {
+            return StudentBrAction.NONE;
+        }
 
         double r = mob.getRandom().nextDouble() * total;
-
         for (var e : score.entrySet()) {
-            double v = Math.max(0, e.getValue());
+            double v = Math.max(0.0, e.getValue());
             r -= v;
-            if (r <= 0) return e.getKey();
+            if (r <= 0.0) {
+                return e.getKey();
+            }
         }
 
         return StudentBrAction.NONE;
@@ -396,19 +393,35 @@ public class HoshinoBrCombatGoal extends Goal {
         student.requestBrAction(a, actionHoldTicks);
     }
 
-    private void stopAction() {
-        current = StudentBrAction.NONE;
+    private void stopActionSoft() {
         actionHoldTicks = 0;
         actionAge = 0;
         meleeHitDone = false;
     }
 
-    private void runCurrent(StudentBrAction a, double dist, boolean canSee, WeaponSpec mainSpec, WeaponSpec subSpec, ServerLevel serverLevel) {
-        if (target != null) student.requestLookTarget(target, 80, 2);
+    private void stopActionHard() {
+        current = StudentBrAction.NONE;
+        actionHoldTicks = 0;
+        actionAge = 0;
+        meleeHitDone = false;
+        sideDashTicksLeft = 0;
+        sideDashVel = Vec3.ZERO;
+    }
+
+    private void requestMoveActionFromNavigation() {
+        if (mob.getNavigation() != null && !mob.getNavigation().isDone()) {
+            student.requestBrAction(StudentBrAction.RIGHT_MOVE, 2);
+        }
+    }
+
+    private void runCurrent(StudentBrAction a, double dist, boolean canSee,
+                            WeaponSpec mainSpec, WeaponSpec subSpec, ServerLevel serverLevel) {
+        if (target != null) {
+            student.requestLookTarget(target, 80, 2);
+        }
 
         if (!canSee) {
-            if (dist < 6.0) moveSideToFindLoS();
-            else moveTowardTarget(SPEED_AIM);
+            requestMoveActionFromNavigation();
             return;
         }
 
@@ -432,7 +445,6 @@ public class HoshinoBrCombatGoal extends Goal {
 
                 if (!meleeHitDone && actionAge >= 2 && actionAge <= 8 && isInMeleeRange(2.6)) {
                     meleeHitDone = true;
-
                     target.hurtServer(serverLevel, serverLevel.damageSources().mobAttack(mob), 6.0f);
 
                     Vec3 to = target.position().subtract(mob.position());
@@ -449,7 +461,6 @@ public class HoshinoBrCombatGoal extends Goal {
 
                 if (!meleeHitDone && actionAge >= 1 && actionAge <= 6 && isInMeleeRange(2.8)) {
                     meleeHitDone = true;
-
                     target.hurtServer(serverLevel, serverLevel.damageSources().mobAttack(mob), 4.0f);
 
                     Vec3 to = target.position().subtract(mob.position());
@@ -500,13 +511,12 @@ public class HoshinoBrCombatGoal extends Goal {
 
             case SUB_SHOT, SUB_RELOAD_SHOT -> {
                 mob.getNavigation().stop();
-
                 for (int t : SUB_BURST_TICKS) {
                     queueBurstShotAtExactTick(true, subSpec, t);
                 }
             }
 
-            default -> mob.getNavigation().stop();
+            default -> requestMoveActionFromNavigation();
         }
     }
 
@@ -522,7 +532,6 @@ public class HoshinoBrCombatGoal extends Goal {
         }
 
         IStudentEntity.FireChannel ch = IStudentEntity.FireChannel.SUB_L;
-
         if (student.hasQueuedFire(ch)) return;
         student.queueFire(target, ch);
         cdSub = Math.max(cdSub, spec.cooldownTicks);
@@ -539,51 +548,6 @@ public class HoshinoBrCombatGoal extends Goal {
 
         if (isSub) cdSub = Math.max(cdSub, spec.cooldownTicks);
         else cdMain = Math.max(cdMain, spec.cooldownTicks);
-    }
-
-    private void moveTowardTarget(double speed) {
-        if (repathCooldown > 0) return;
-        repathCooldown = REPATH_INTERVAL;
-        Vec3 pos = target.position();
-        mob.getNavigation().moveTo(pos.x, pos.y, pos.z, speed);
-    }
-
-    private void moveAwayFromTarget(double speed) {
-        if (repathCooldown > 0) return;
-        repathCooldown = REPATH_INTERVAL;
-
-        Vec3 away = mob.position().subtract(target.position());
-        away = new Vec3(away.x, 0, away.z);
-        if (away.lengthSqr() < 1.0e-6) return;
-
-        Vec3 desired = mob.position().add(away.normalize().scale(6.0));
-        Vec3 fuzzy = DefaultRandomPos.getPosTowards(mob, 12, 7, desired, Math.PI / 2);
-        if (fuzzy == null) fuzzy = desired;
-
-        mob.getNavigation().moveTo(fuzzy.x, fuzzy.y, fuzzy.z, speed);
-    }
-
-    private void moveSideToFindLoS() {
-        if (repathCooldown > 0) return;
-        repathCooldown = REPATH_INTERVAL;
-
-        if (target == null) return;
-
-        Vec3 to = target.position().subtract(mob.position());
-        Vec3 flat = new Vec3(to.x, 0, to.z);
-        if (flat.lengthSqr() < 1.0e-6) return;
-
-        Vec3 dir = flat.normalize();
-        boolean left = mob.getRandom().nextBoolean();
-        Vec3 side = left ? new Vec3(-dir.z, 0, dir.x) : new Vec3(dir.z, 0, -dir.x);
-
-        double len = 2.5 + mob.getRandom().nextDouble() * 1.5;
-        Vec3 desired = mob.position().add(side.normalize().scale(len));
-
-        Vec3 fuzzy = DefaultRandomPos.getPosTowards(mob, 10, 6, desired, Math.PI / 2);
-        if (fuzzy == null) fuzzy = desired;
-
-        mob.getNavigation().moveTo(fuzzy.x, fuzzy.y, fuzzy.z, SPEED_AIM);
     }
 
     private void startSideStepDash(boolean left, double horizSpeed, int dashTicks) {
