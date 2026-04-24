@@ -1,14 +1,7 @@
 package com.licht_meilleur.blue_student.entity;
 
 import com.licht_meilleur.blue_student.BlueStudentMod;
-import com.licht_meilleur.blue_student.ai.StudentAimGoal;
-import com.licht_meilleur.blue_student.ai.StudentCombatGoal;
-import com.licht_meilleur.blue_student.ai.StudentEatGoal;
-import com.licht_meilleur.blue_student.ai.StudentFollowGoal;
-import com.licht_meilleur.blue_student.ai.StudentReturnToOwnerGoal;
-import com.licht_meilleur.blue_student.ai.StudentRideWithOwnerGoal;
-import com.licht_meilleur.blue_student.ai.StudentSecurityGoal;
-import com.licht_meilleur.blue_student.ai.StudentStuckEscapeGoal;
+import com.licht_meilleur.blue_student.ai.*;
 import com.licht_meilleur.blue_student.ai.only.HinaAirCombatGoal;
 import com.licht_meilleur.blue_student.ai.only.HinaFlyGoal;
 import com.licht_meilleur.blue_student.bed.BedLinkManager;
@@ -141,30 +134,21 @@ public class HinaEntity extends AbstractStudentEntity {
         this.goalSelector.addGoal(1, new FloatGoal(this));
 
         this.goalSelector.addGoal(2, new StudentStuckEscapeGoal(this, this));
-        this.goalSelector.addGoal(3, new PanicGoal(this, 1.25));
+        this.goalSelector.addGoal(3, new StudentCliffAvoidGoal(this));
+        this.goalSelector.addGoal(4, new StudentReturnToOwnerGoal(this, this, 1.35, 28.0, 2.5, 48.0, 20));
+        this.goalSelector.addGoal(5, new StudentAimGoal(this, this));
+        this.goalSelector.addGoal(6, new HinaAirCombatGoal(this, this));
+        this.goalSelector.addGoal(7, new StudentCombatGoal(this, this));
 
-        this.goalSelector.addGoal(4, new HinaAirCombatGoal(this, this));
-        this.goalSelector.addGoal(5, new StudentCombatGoal(this, this));
-        this.goalSelector.addGoal(6, new StudentAimGoal(this, this));
-        this.goalSelector.addGoal(7, new HinaFlyGoal(this, this));
+        this.goalSelector.addGoal(8, new HinaFlyGoal(this, this));
+        this.goalSelector.addGoal(9, new PanicGoal(this, 1.25));
 
-        this.goalSelector.addGoal(9, new StudentReturnToOwnerGoal(this, this, 1.35, 28.0, 2.5, 48.0, 20));
         this.goalSelector.addGoal(10, new StudentFollowGoal(this, this, 1.1));
-
         this.goalSelector.addGoal(11, new StudentSecurityGoal(this, this,
                 new StudentSecurityGoal.ISecurityPosProvider() {
-                    @Override
-                    public BlockPos getSecurityPos() {
-                        return HinaEntity.this.getSecurityPos();
-                    }
-
-                    @Override
-                    public void setSecurityPos(BlockPos pos) {
-                        HinaEntity.this.setSecurityPos(pos);
-                    }
-                },
-                1.0));
-
+                    @Override public BlockPos getSecurityPos() { return HinaEntity.this.getSecurityPos(); }
+                    @Override public void setSecurityPos(BlockPos pos) { HinaEntity.this.setSecurityPos(pos); }
+                }, 1.0));
         this.goalSelector.addGoal(12, new StudentEatGoal(this, this));
     }
 
@@ -252,12 +236,12 @@ public class HinaEntity extends AbstractStudentEntity {
         this.setNoGravity(true);
         this.fallDistance = 0.0f;
 
-        this.setPos(this.getX(), this.getY() + 0.12, this.getZ());
+        this.setPos(this.getX(), this.getY() + 0.04, this.getZ());
         this.setYRot(this.getYRot());
         this.setXRot(this.getXRot());
 
         Vec3 v = this.getDeltaMovement();
-        this.setDeltaMovement(v.x, Math.max(v.y, 0.42), v.z);
+        this.setDeltaMovement(v.x, Math.max(v.y, 0.18), v.z);
 
         this.getNavigation().stop();
         applyFlySpeed(true);
@@ -266,13 +250,11 @@ public class HinaEntity extends AbstractStudentEntity {
     private void keepFlyingPhysics() {
         this.fallDistance = 0.0f;
 
-        this.setPos(this.getX(), this.getY() + 0.10, this.getZ());
-        this.setYRot(this.getYRot());
-        this.setXRot(this.getXRot());
-
         Vec3 v = this.getDeltaMovement();
-        if (v.y < HOVER_MIN_Y_VEL) {
-            this.setDeltaMovement(v.x, HOVER_MIN_Y_VEL, v.z);
+
+        // 上昇を強制しない。極端な落下だけ軽く抑える
+        if (v.y < -0.08) {
+            this.setDeltaMovement(v.x, -0.08, v.z);
         }
     }
 

@@ -15,15 +15,7 @@ import com.licht_meilleur.blue_student.inventory.StudentInventory;
 import com.licht_meilleur.blue_student.inventory.StudentMenuData;
 import com.licht_meilleur.blue_student.inventory.StudentScreenHandler;
 import com.licht_meilleur.blue_student.state.StudentWorldState;
-import com.licht_meilleur.blue_student.student.IStudentEntity;
-import com.licht_meilleur.blue_student.student.LookIntentType;
-import com.licht_meilleur.blue_student.student.LookRequest;
-import com.licht_meilleur.blue_student.student.StudentAiMode;
-import com.licht_meilleur.blue_student.student.StudentBrAction;
-import com.licht_meilleur.blue_student.student.StudentEquipments;
-import com.licht_meilleur.blue_student.student.StudentForm;
-import com.licht_meilleur.blue_student.student.StudentId;
-import com.licht_meilleur.blue_student.student.StudentLifeState;
+import com.licht_meilleur.blue_student.student.*;
 import com.licht_meilleur.blue_student.weapon.WeaponSpec;
 import com.licht_meilleur.blue_student.weapon.WeaponSpecs;
 import net.fabricmc.fabric.api.menu.v1.ExtendedMenuProvider;
@@ -62,11 +54,14 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayDeque;
 import java.util.EnumSet;
 import java.util.EnumMap;
 import java.util.UUID;
 
 public abstract class AbstractStudentEntity extends PathfinderMob implements IStudentEntity, GeoEntity {
+
+    private static final int STUDENT_DATA_VERSION = 1;
 
     public static final String ANIM_IDLE   = "animation.model.idle";
     public static final String ANIM_RUN    = "animation.model.run";
@@ -149,7 +144,7 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
     protected int reloadTicksLeft = 0;
     protected boolean ammoInitDone = false;
 
-    private final EnumMap<IStudentEntity.FireChannel, UUID> queuedFire =
+    private final EnumMap<IStudentEntity.FireChannel, ArrayDeque<UUID>> queuedFire =
             new EnumMap<>(IStudentEntity.FireChannel.class);
     private IStudentEntity.FireChannel lastConsumedChannel = IStudentEntity.FireChannel.MAIN;
 
@@ -216,6 +211,9 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
 
     private int shotRestartGapTicks = 0;
 
+    private StudentBrAction lastLoggedBrAction = null;
+    private String lastLoggedBrAnim = null;
+
     protected AbstractStudentEntity(EntityType<? extends PathfinderMob> type, Level level) {
         super(type, level);
 
@@ -223,6 +221,9 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
         this.setPathfindingMalus(PathType.LAVA, 80.0f);
         //this.setPathfindingMalus(PathType.DAMAGE_FIRE, 40.0f);
         //this.setPathfindingMalus(PathType.DANGER_FIRE, 20.0f);
+        for (IStudentEntity.FireChannel ch : IStudentEntity.FireChannel.values()) {
+            queuedFire.put(ch, new ArrayDeque<>());
+        }
     }
 
     public static AttributeSupplier.Builder createAttributes() {
@@ -323,6 +324,8 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
     protected void addAdditionalSaveData(ValueOutput output) {
         super.addAdditionalSaveData(output);
 
+        output.putInt("DataVersion", STUDENT_DATA_VERSION);
+
         if (this.ownerUuid != null) {
             output.putString("Owner", this.ownerUuid.toString());
         }
@@ -331,6 +334,8 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
     @Override
     protected void readAdditionalSaveData(ValueInput input) {
         super.readAdditionalSaveData(input);
+
+        int dataVersion = input.getInt("DataVersion").orElse(0);
 
         this.ownerUuid = input.getString("Owner")
                 .map(UUID::fromString)
@@ -517,6 +522,7 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
 
         handleFollowDimTransfer();
 
+        /*
         Player owner = getOwnerPlayer();
         if (owner instanceof ServerPlayer sp) {
             if (!isLifeLockedForGoal() && getAiMode() == StudentAiMode.FOLLOW) {
@@ -525,6 +531,29 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
                 }
             }
         }
+        */
+        if (tickCount % 20 == 0 && level() instanceof ServerLevel sw) {
+            StudentWorldState st = StudentWorldState.get(sw);
+
+            CompoundTag backup = new CompoundTag();
+            saveStudentDataToTagForTransfer(backup);
+            st.setPacked(getStudentId(), backup);
+
+            // 生きているのでpacked扱いにはしない
+            st.setPackedFlag(getStudentId(), false);
+        }
+
+        if (tickCount % 40 == 0 && level() instanceof ServerLevel sw) {
+            Player owner = getOwnerPlayer();
+            if (owner != null) {
+                double dist = distanceToSqr(owner);
+
+                if (owner.level() != level() || dist > 256 * 256) {
+                    StudentWorldState.get(sw).markMissing(getStudentId(), sw);
+                }
+            }
+        }
+
 
         if (ownerUuid != null) {
             boolean ownerOnline = getOwnerPlayer() != null;
@@ -547,7 +576,8 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
         tickLookPolicies();
 
         if (tickCount % 5 == 0 && level() instanceof ServerLevel sw) {
-            StudentWorldState.get(sw).updatePos(getStudentId(), sw, blockPosition());
+            StudentWorldState state = StudentWorldState.get(sw);
+            state.updatePos(getStudentId(), sw, blockPosition());
         }
     }
 
@@ -738,17 +768,29 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
 
         if (isLifeLocked() && respawnBedFoot != null) {
             ServerLevel ow = sw.getServer().overworld();
+
+            // まだオーバーワールドでなければ、まず移動だけ行う
             if (ow != null && sw != ow) {
-                queueTeleportToOverworldForRespawn(ow);
+                StudentWorldState st = StudentWorldState.get(sw.getServer());
+
+                CompoundTag packed = new CompoundTag();
+                saveStudentDataToTagForTransfer(packed);
+                st.setPacked(getStudentId(), packed);
+                st.markRespawning(getStudentId(), sw, 100);
+
+                discard();
                 return;
             }
-        }
 
-        boolean bedOk = respawnBedFoot != null && isValidLinkedBed(sw, respawnBedFoot);
-        if (!bedOk && isLifeLocked()) {
-            StudentWorldState.get(sw.getServer()).clearBed(getStudentId());
-            forceWakeUp(sw, blockPosition(), true);
-            return;
+            // ここから先はオーバーワールドにいる前提でベッド確認
+            if (ow != null) {
+                boolean bedOk = isValidLinkedBed(ow, respawnBedFoot);
+                if (!bedOk) {
+                    StudentWorldState.get(sw.getServer()).clearBed(getStudentId());
+                    forceWakeUp(sw, blockPosition(), true);
+                    return;
+                }
+            }
         }
 
         switch (lifeState) {
@@ -1000,6 +1042,7 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
 
         if (getForm() == StudentForm.BR) {
             if (!onGround() && getDeltaMovement().y < -0.08) {
+                //logBrAnim(StudentBrAction.NONE, "FALL");
                 return FALL;
             }
 
@@ -1007,11 +1050,20 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
             if (action != StudentBrAction.NONE) {
                 RawAnimation brAnim = getBrAnimationForAction(action);
                 if (brAnim != null) {
+                   // logBrAnim(action, getBrAnimationName(action));
                     return brAnim;
+                } else {
+                   // logBrAnim(action, "NULL_BR_ANIM");
                 }
             }
 
-            return isActuallyMovingForAnim() ? RUN : IDLE;
+            if (isActuallyMovingForAnim()) {
+                //logBrAnim(StudentBrAction.NONE, "RUN");
+                return RUN;
+            }
+
+            //logBrAnim(StudentBrAction.NONE, "IDLE");
+            return IDLE;
         }
 
         if (clientShotTicks > 0 || clientShotHoldTicks > 0) {
@@ -1027,6 +1079,39 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
         if (clientReloadTicks > 0) return RELOAD;
 
         return isActuallyMoving() ? RUN : IDLE;
+    }
+
+    /*
+    private void logBrAnim(StudentBrAction action, String animName) {
+        if (action == lastLoggedBrAction && java.util.Objects.equals(animName, lastLoggedBrAnim)) {
+            return;
+        }
+
+        lastLoggedBrAction = action;
+        lastLoggedBrAnim = animName;
+
+        System.out.println("[BR-ANIM] action=" + action + " anim=" + animName);
+    }
+
+
+     */
+    private String getBrAnimationName(StudentBrAction a) {
+        return switch (a) {
+            case MAIN_SHOT -> "MAIN_SHOT";
+            case GUARD_SHOT -> "GUARD_SHOT";
+            case DODGE_SHOT -> "DODGE_SHOT";
+            case GUARD_TACKLE -> "GUARD_TACKLE";
+            case GUARD_BASH -> "GUARD_BASH";
+            case RIGHT_SIDE_SUB_SHOT -> "RIGHT_SIDE_SUB_SHOT";
+            case LEFT_SIDE_SUB_SHOT -> "LEFT_SIDE_SUB_SHOT";
+            case SUB_SHOT -> "SUB_SHOT";
+            case SUB_RELOAD_SHOT -> "SUB_RELOAD_SHOT";
+            case LEFT_MOVE -> "LEFT_MOVE";
+            case RIGHT_MOVE -> "RIGHT_MOVE";
+            case IDLE -> "IDLE";
+            case NONE -> "NONE";
+            default -> a.name();
+        };
     }
 
     private boolean isActuallyMovingForAnim() {
@@ -1180,6 +1265,10 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
             }
         }
 
+        if (!level().isClientSide() && onGround()) {
+            preventWalkingOffCliff();
+        }
+
         if (level().isClientSide()) return;
 
         if (isInWater() && !isPassenger()) {
@@ -1189,6 +1278,35 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
                 forward = forward.normalize().scale(0.03);
                 addDeltaMovement(new Vec3(forward.x, 0.0, forward.z));
             }
+        }
+    }
+
+    private void preventWalkingOffCliff() {
+        if (!(level() instanceof ServerLevel sw)) return;
+
+        Vec3 motion = getDeltaMovement();
+        double hx = motion.x;
+        double hz = motion.z;
+
+        if (hx * hx + hz * hz < 0.003) return;
+
+        Vec3 next = position().add(hx * 4.0, 0, hz * 4.0);
+        BlockPos nextPos = BlockPos.containing(next.x, getY() - 0.1, next.z);
+
+        int safeDrop = 3;
+        boolean groundFound = false;
+
+        for (int i = 0; i <= safeDrop; i++) {
+            BlockPos check = nextPos.below(i);
+            if (!sw.getBlockState(check).getCollisionShape(sw, check).isEmpty()) {
+                groundFound = true;
+                break;
+            }
+        }
+
+        if (!groundFound) {
+            getNavigation().stop();
+            setDeltaMovement(0, getDeltaMovement().y, 0);
         }
     }
 
@@ -1208,6 +1326,8 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
     }
 
     private void saveStudentDataToTag(CompoundTag tag) {
+        tag.putInt("DataVersion", STUDENT_DATA_VERSION);
+
         tag.putInt("StudentForm", entityData.get(FORM_ID));
         tag.putInt("DimTransferCooldown", dimTransferCooldown);
         tag.putBoolean("DimTransferQueued", dimTransferQueued);
@@ -1242,6 +1362,8 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
     }
 
     private void loadStudentDataFromTag(CompoundTag tag) {
+        int dataVersion = tag.getInt("DataVersion").orElse(0);
+
         if (tag.contains("StudentForm")) {
             entityData.set(FORM_ID, tag.getInt("StudentForm").orElse(0));
         }
@@ -1340,6 +1462,19 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
             return;
         }
 
+        if (!level().isClientSide() && level() instanceof ServerLevel sw) {
+            StudentWorldState st = StudentWorldState.get(sw);
+
+            // 次元移動・死亡復活待ち・packed保存中のdiscardでは、親データを消さない
+            if (packedForDimTransfer
+                    || st.isPacked(getStudentId())
+                    || st.getPresence(getStudentId()) == StudentPresenceState.PACKED
+                    || st.getPresence(getStudentId()) == StudentPresenceState.RESPAWNING) {
+                super.remove(reason);
+                return;
+            }
+        }
+
         super.remove(reason);
 
         if (level().isClientSide()) return;
@@ -1404,10 +1539,34 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
         return super.hurtServer(level, source, amount);
     }
 
+    @Override
+    public void die(net.minecraft.world.damagesource.DamageSource damageSource) {
+        if (level().isClientSide()) {
+            super.die(damageSource);
+            return;
+        }
+
+        if (!(level() instanceof ServerLevel sw)) {
+            super.die(damageSource);
+            return;
+        }
+
+        if (isLifeLocked()) {
+            return;
+        }
+
+        startBedRespawn(sw);
+    }
+
     private void startBedRespawn(ServerLevel sw) {
         MinecraftServer server = sw.getServer();
         ServerLevel overworld = server.overworld();
         StudentWorldState st = StudentWorldState.get(server);
+
+        CompoundTag packed = new CompoundTag();
+        saveStudentDataToTagForTransfer(packed);
+        st.setPacked(getStudentId(), packed);
+        st.markRespawning(getStudentId(), sw, 100);
 
         BlockPos bed = st.getBed(getStudentId());
 
@@ -1456,7 +1615,7 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
         lifeTimer = 60;
 
         if (level() != overworld) {
-            queueTeleportToOverworldForRespawn(overworld);
+            //queueTeleportToOverworldForRespawn(overworld);
         }
     }
 
@@ -1815,10 +1974,17 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
             setDeltaMovement(Vec3.ZERO);
             fallDistance = 0;
 
-            BlockPos p = blockPosition();
+            BlockPos p = respawnSafePos != null
+                    ? respawnSafePos
+                    : (respawnBedFoot != null ? respawnBedFoot.above() : blockPosition());
+
             AbstractStudentEntity moved = teleportTo(ow, p, getYRot());
             if (moved != null) {
                 moved.owRespawnCooldown = Math.max(moved.owRespawnCooldown, 20);
+                moved.setDeltaMovement(Vec3.ZERO);
+                moved.getNavigation().stop();
+                moved.fallDistance = 0;
+                moved.noFallTicks = Math.max(moved.noFallTicks, 20);
             }
         });
     }
@@ -1873,14 +2039,58 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
         dimTransferQueued = true;
         dimTransferCooldown = 40;
 
-
         server.execute(() -> {
             dimTransferQueued = false;
-            if (isRemoved() || !isAlive()) return;
 
-            com.licht_meilleur.blue_student.util.DimensionTransferHelper.packStudent(this, sw);
-            BlockPos spawn = owner.blockPosition().above();
-            com.licht_meilleur.blue_student.util.DimensionTransferHelper.spawnPackedStudent(dest, getStudentId(), spawn, owner.getYRot());
+            if (isRemoved() || !isAlive()) {
+                StudentWorldState.get(server).markMissing(getStudentId(), sw);
+                return;
+            }
+
+            if (!(level() instanceof ServerLevel currentLevel)) return;
+
+            ServerPlayer currentOwner = server.getPlayerList().getPlayer(ownerUuid);
+            if (currentOwner == null || !currentOwner.isAlive()) return;
+
+            ServerLevel currentDest = currentOwner.level();
+            if (currentDest == currentLevel) return;
+
+            StudentWorldState state = StudentWorldState.get(server);
+
+            CompoundTag packed = new CompoundTag();
+            saveStudentDataToTagForTransfer(packed);
+            state.setPacked(getStudentId(), packed);
+            state.markPacked(getStudentId(), currentLevel);
+
+            stopRiding();
+            ejectPassengers();
+            getNavigation().stop();
+            setDeltaMovement(Vec3.ZERO);
+            fallDistance = 0;
+
+            BlockPos spawn = com.licht_meilleur.blue_student.util.DimensionTransferHelper
+                    .findSafeNear(currentDest, currentOwner.blockPosition());
+
+            com.licht_meilleur.blue_student.util.DimensionTransferHelper
+                    .packStudent(this, currentLevel);
+
+            AbstractStudentEntity spawned =
+                    com.licht_meilleur.blue_student.util.DimensionTransferHelper
+                            .spawnPackedStudent(currentDest, getStudentId(), spawn, currentOwner.getYRot());
+
+            if (spawned == null) {
+                state.markMissing(getStudentId(), currentLevel);
+                return;
+            }
+
+            spawned.setDeltaMovement(Vec3.ZERO);
+            spawned.getNavigation().stop();
+            spawned.fallDistance = 0;
+            spawned.noFallTicks = Math.max(spawned.noFallTicks, 20);
+            spawned.dimTransferCooldown = Math.max(spawned.dimTransferCooldown, 40);
+
+            state.setStudent(getStudentId(), spawned.getUUID(), ownerUuid, currentDest, spawn);
+            state.clearPacked(getStudentId());
         });
     }
 
@@ -1945,14 +2155,14 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
     public void queueFire(LivingEntity target, IStudentEntity.FireChannel ch) {
         if (level().isClientSide() || target == null) return;
         if (ch == null) ch = IStudentEntity.FireChannel.MAIN;
-        queuedFire.put(ch, target.getUUID());
+        queuedFire.get(ch).addLast(target.getUUID());
     }
 
     @Override
     public boolean hasQueuedFire(IStudentEntity.FireChannel ch) {
         if (level().isClientSide()) return false;
         if (ch == null) ch = IStudentEntity.FireChannel.MAIN;
-        return queuedFire.get(ch) != null;
+        return !queuedFire.get(ch).isEmpty();
     }
 
     @Override
@@ -1960,7 +2170,7 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
         if (level().isClientSide() || !(level() instanceof ServerLevel sw)) return null;
         if (ch == null) ch = IStudentEntity.FireChannel.MAIN;
 
-        UUID id = queuedFire.remove(ch);
+        UUID id = queuedFire.get(ch).pollFirst();
         if (id == null) return null;
 
         lastConsumedChannel = ch;

@@ -1,10 +1,12 @@
 package com.licht_meilleur.blue_student.client;
 
+import com.geckolib.cache.model.GeoBone;
 import com.geckolib.model.GeoModel;
 import com.geckolib.renderer.base.GeoRenderState;
 import com.licht_meilleur.blue_student.BlueStudentMod;
 import com.licht_meilleur.blue_student.entity.AbstractStudentEntity;
 import net.minecraft.resources.Identifier;
+
 
 public abstract class BaseStudentModel<T extends AbstractStudentEntity> extends GeoModel<T> {
 
@@ -32,4 +34,7 @@ public abstract class BaseStudentModel<T extends AbstractStudentEntity> extends 
     public Identifier getAnimationResource(T animatable) {
         return BlueStudentMod.id(this.normalAnimationPath);
     }
+
+
+
 }

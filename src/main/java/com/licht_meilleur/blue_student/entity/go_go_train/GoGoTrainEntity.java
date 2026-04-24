@@ -70,8 +70,8 @@ public class GoGoTrainEntity extends Entity implements GeoEntity {
     private int fireCooldown = 0;
     private static final int FIRE_CD = 12;
 
-    private static final double HK_BACK = 2.8;
-    private static final double HK_RIGHT = 0.0;
+    private static final double HK_BACK = 2.0;
+    private static final double HK_RIGHT = -0.5;
     private static final double HK_UP = 0.0;
 
     private static final EntityDataAccessor<Float> SYNC_BODY_YAW =

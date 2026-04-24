@@ -113,7 +113,8 @@ public final class DimensionTransferHelper {
         entity.discard();
     }
 
-    public static boolean spawnPackedStudent(
+    @Nullable
+    public static AbstractStudentEntity spawnPackedStudent(
             ServerLevel dest,
             StudentId sid,
             BlockPos spawnPos,
@@ -123,25 +124,35 @@ public final class DimensionTransferHelper {
         StudentWorldState st = StudentWorldState.get(server);
 
         CompoundTag packed = st.getPacked(sid);
-        if (packed == null) return false;
+        if (packed == null) return null;
 
         AbstractStudentEntity ase = createStudent(sid, dest);
-        if (ase == null) return false;
+        if (ase == null) return null;
 
         ase.loadStudentDataFromTagForTransfer(packed);
+
         ase.setPos(spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5);
         ase.setYRot(yaw);
-        dest.addFreshEntity(ase);
+        ase.setXRot(0.0f);
+
+        ase.setDeltaMovement(Vec3.ZERO);
+        ase.fallDistance = 0;
+        ase.noFallTicks = Math.max(ase.noFallTicks, 20);
+
+        boolean ok = dest.addFreshEntity(ase);
+        if (!ok) {
+            return null;
+        }
 
         st.setStudent(sid, ase.getUUID(), ase.getOwnerUuid(), dest, spawnPos);
         st.setPackedFlag(sid, false);
         st.clearPacked(sid);
 
-        return true;
+        return ase;
     }
 
     @Nullable
-    private static AbstractStudentEntity createStudent(StudentId id, ServerLevel dest) {
+    public static AbstractStudentEntity createStudent(StudentId id, ServerLevel dest) {
         Entity raw = switch (id) {
             case SHIROKO -> BlueStudentMod.SHIROKO.create(dest, EntitySpawnReason.LOAD);
             case HOSHINO -> BlueStudentMod.HOSHINO.create(dest, EntitySpawnReason.LOAD);

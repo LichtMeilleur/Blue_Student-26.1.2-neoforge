@@ -1,13 +1,6 @@
 package com.licht_meilleur.blue_student.entity;
 
-import com.licht_meilleur.blue_student.ai.StudentAimGoal;
-import com.licht_meilleur.blue_student.ai.StudentCombatGoal;
-import com.licht_meilleur.blue_student.ai.StudentEatGoal;
-import com.licht_meilleur.blue_student.ai.StudentEvadeGoal;
-import com.licht_meilleur.blue_student.ai.StudentFollowGoal;
-import com.licht_meilleur.blue_student.ai.StudentRideWithOwnerGoal;
-import com.licht_meilleur.blue_student.ai.StudentSecurityGoal;
-import com.licht_meilleur.blue_student.ai.StudentStuckEscapeGoal;
+import com.licht_meilleur.blue_student.ai.*;
 import com.licht_meilleur.blue_student.ai.br_ai.HoshinoBrCombatGoal;
 import com.licht_meilleur.blue_student.ai.br_ai.HoshinoBrMoveGoal;
 import com.licht_meilleur.blue_student.ai.only.HoshinoGuardGoal;
@@ -46,6 +39,8 @@ public class HoshinoEntity extends AbstractStudentEntity {
             SynchedEntityData.defineId(HoshinoEntity.class, EntityDataSerializers.BOOLEAN);
     private static final EntityDataAccessor<Boolean> TD_GUARD_SHOOTING =
             SynchedEntityData.defineId(HoshinoEntity.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Boolean> TD_BR_GUARDING =
+            SynchedEntityData.defineId(HoshinoEntity.class, EntityDataSerializers.BOOLEAN);
 
     public static final String ANIM_SHOT = "animation.model.shot";
     public static final String ANIM_GUARD_IDLE = "animation.model.guard_idle";
@@ -72,7 +67,7 @@ public class HoshinoEntity extends AbstractStudentEntity {
     private static final RawAnimation GUARD_SHOT = RawAnimation.begin().thenPlay(ANIM_GUARD_SHOT);
 
     private static final RawAnimation DODGE_SHOT = RawAnimation.begin().thenPlay(ANIM_DODGE_SHOT);
-    private static final RawAnimation GUARD_TACKLE = RawAnimation.begin().thenPlay(ANIM_GUARD_TACKLE);
+    private static final RawAnimation GUARD_TACKLE = RawAnimation.begin().thenLoop(ANIM_GUARD_TACKLE);
     private static final RawAnimation GUARD_BASH = RawAnimation.begin().thenPlay(ANIM_GUARD_BASH);
     private static final RawAnimation SUB_RELOAD_SHOT = RawAnimation.begin().thenPlay(ANIM_SUB_RELOAD_SHOT);
     private static final RawAnimation SUB_SHOT = RawAnimation.begin().thenPlay(ANIM_SUB_SHOT);
@@ -89,9 +84,14 @@ public class HoshinoEntity extends AbstractStudentEntity {
 
     private double baseMoveSpeedCached = -1;
 
+
+
     public HoshinoEntity(EntityType<? extends AbstractStudentEntity> type, Level level) {
         super(type, level);
     }
+
+
+
 
     @Override
     protected RawAnimation getBrAnimationForAction(StudentBrAction a) {
@@ -104,6 +104,7 @@ public class HoshinoEntity extends AbstractStudentEntity {
             case LEFT_SIDE_SUB_SHOT -> LEFT_SIDE_SUB_SHOT;
             case SUB_SHOT -> SUB_SHOT;
             case SUB_RELOAD_SHOT -> SUB_RELOAD_SHOT;
+            case GUARD_SHOT -> GUARD_SHOT;
             case IDLE -> BR_IDLE;
             default -> null;
         };
@@ -161,31 +162,25 @@ public class HoshinoEntity extends AbstractStudentEntity {
         this.goalSelector.addGoal(0, new StudentRideWithOwnerGoal(this, this));
         this.goalSelector.addGoal(1, new FloatGoal(this));
 
-        this.goalSelector.addGoal(2, new StudentAimGoal(this, this));
+        this.goalSelector.addGoal(2, new StudentEvadeGoal(this, this));
+        this.goalSelector.addGoal(3, new StudentStuckEscapeGoal(this, this));
+        this.goalSelector.addGoal(4, new StudentCliffAvoidGoal(this));
+        this.goalSelector.addGoal(5, new StudentReturnToOwnerGoal(this, this, 1.35, 28.0, 2.5, 48.0, 20));
 
-        this.goalSelector.addGoal(3, new HoshinoBrCombatGoal(this, this)); // MOVEなし
-        this.goalSelector.addGoal(4, new HoshinoBrMoveGoal(this, this));   // MOVEあり
+        this.goalSelector.addGoal(6, new StudentAimGoal(this, this));
+        this.goalSelector.addGoal(7, new HoshinoBrCombatGoal(this, this));
+        this.goalSelector.addGoal(8, new HoshinoBrMoveGoal(this, this));
+        this.goalSelector.addGoal(9, new HoshinoGuardGoal(this, this));
+        this.goalSelector.addGoal(10, new StudentCombatGoal(this, this));
 
-        this.goalSelector.addGoal(5, new HoshinoGuardGoal(this, this));
-        this.goalSelector.addGoal(6, new StudentEvadeGoal(this, this));
-        this.goalSelector.addGoal(7, new StudentCombatGoal(this, this));
-        this.goalSelector.addGoal(8, new StudentStuckEscapeGoal(this, this));
 
-        this.goalSelector.addGoal(9, new StudentFollowGoal(this, this, 1.1));
-        this.goalSelector.addGoal(10, new StudentSecurityGoal(this, this,
+        this.goalSelector.addGoal(11, new StudentFollowGoal(this, this, 1.1));
+        this.goalSelector.addGoal(12, new StudentSecurityGoal(this, this,
                 new StudentSecurityGoal.ISecurityPosProvider() {
-                    @Override
-                    public BlockPos getSecurityPos() {
-                        return HoshinoEntity.this.getSecurityPos();
-                    }
-
-                    @Override
-                    public void setSecurityPos(BlockPos pos) {
-                        HoshinoEntity.this.setSecurityPos(pos);
-                    }
-                },
-                1.0));
-        this.goalSelector.addGoal(11, new StudentEatGoal(this, this));
+                    @Override public BlockPos getSecurityPos() { return HoshinoEntity.this.getSecurityPos(); }
+                    @Override public void setSecurityPos(BlockPos pos) { HoshinoEntity.this.setSecurityPos(pos); }
+                }, 1.0));
+        this.goalSelector.addGoal(13, new StudentEatGoal(this, this));
     }
 
     @Override
@@ -360,11 +355,29 @@ public class HoshinoEntity extends AbstractStudentEntity {
             this.entityData.set(TD_GUARD_SHOOTING, v);
         }
     }
+    public boolean isBrGuarding() {
+        return this.entityData.get(TD_BR_GUARDING);
+    }
+
+    public void setBrGuarding(boolean v) {
+        if (!this.level().isClientSide()) {
+            this.entityData.set(TD_BR_GUARDING, v);
+        }
+    }
 
     @Override
     protected void defineSynchedData(SynchedEntityData.Builder builder) {
         super.defineSynchedData(builder);
         builder.define(TD_GUARDING, false);
         builder.define(TD_GUARD_SHOOTING, false);
+        builder.define(TD_BR_GUARDING, false);
+    }
+    @Override
+    public boolean hurtServer(ServerLevel level, DamageSource source, float damage) {
+        if (getForm() == StudentForm.BR && isBrGuarding()) {
+            damage *= 0.60f; // 40%軽減
+        }
+
+        return super.hurtServer(level, source, damage);
     }
 }

@@ -34,6 +34,13 @@ public class NozomiTrainGoal extends Goal {
 
     @Override
     public boolean canUse() {
+        if (nozomi.level().isClientSide()) return false;
+        if (nozomi.isLifeLockedForGoal()) return false;
+        if (!nozomi.canUseTrainSkill()) return false;
+
+        LivingEntity target = nozomi.getTarget();
+        if (target == null || !target.isAlive()) return false;
+
         if (nozomi.level() instanceof ServerLevel serverLevel) {
             UUID ownerP = nozomi.getOwnerUuid();
             if (ownerP != null) {
@@ -47,9 +54,7 @@ public class NozomiTrainGoal extends Goal {
             }
         }
 
-        return !nozomi.level().isClientSide()
-                && !nozomi.isLifeLockedForGoal()
-                && nozomi.canUseTrainSkill();
+        return true;
     }
 
     @Override

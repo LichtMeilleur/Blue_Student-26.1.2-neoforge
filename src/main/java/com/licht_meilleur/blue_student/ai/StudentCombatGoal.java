@@ -8,13 +8,16 @@ import com.licht_meilleur.blue_student.student.StudentForm;
 import com.licht_meilleur.blue_student.weapon.WeaponSpec;
 import com.licht_meilleur.blue_student.weapon.WeaponSpecs;
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.util.DefaultRandomPos;
 import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Comparator;
 import java.util.EnumSet;
@@ -35,6 +38,8 @@ public class StudentCombatGoal extends Goal {
 
     private static final double GUARD_RADIUS = 16.0;
 
+    private int combatLockTicks = 0;
+
     public StudentCombatGoal(PathfinderMob mob, IStudentEntity student) {
         this.mob = mob;
         this.student = student;
@@ -51,29 +56,61 @@ public class StudentCombatGoal extends Goal {
         if (mob instanceof AbstractStudentEntity se && se.getForm() == StudentForm.BR) return false;
         if (isBr()) return false;
 
-        if (!(mob.level() instanceof net.minecraft.server.level.ServerLevel)) return false;
+        if (!(mob.level() instanceof ServerLevel)) return false;
 
         StudentAiMode mode = student.getAiMode();
         if (mode != StudentAiMode.FOLLOW && mode != StudentAiMode.SECURITY) return false;
 
-        target = findTarget();
-
-        if (target != null) {
-            mob.setTarget(target);
+        LivingEntity found = findTarget();
+        if (found == null || !found.isAlive()) {
+            target = null;
+            mob.setTarget(null);
+            return false;
         }
-        return target != null;
+
+        // ownerがいるなら、置いていかれすぎた戦闘はしない
+
+
+        Player owner = resolveOwner();
+        if (owner != null && owner.level() == mob.level()) {
+            double dOwner = mob.distanceToSqr(owner);
+            if (dOwner > 22.0 * 22.0) {
+                target = null;
+                mob.setTarget(null);
+                return false;
+            }
+        }
+
+        target = found;
+        mob.setTarget(target);
+        return true;
+    }
+
+    @Nullable
+    private Player resolveOwner() {
+        if (student instanceof AbstractStudentEntity se) {
+            Player p = se.getOwnerPlayer();
+            if (p != null) return p;
+        }
+        return null;
     }
 
     @Override
     public boolean canContinueToUse() {
         if (mob instanceof AbstractStudentEntity se && se.getForm() == StudentForm.BR) return false;
         if (isBr()) return false;
-        if (!(mob.level() instanceof net.minecraft.server.level.ServerLevel)) return false;
+        if (!(mob.level() instanceof ServerLevel)) return false;
 
         StudentAiMode mode = student.getAiMode();
         if (mode != StudentAiMode.FOLLOW && mode != StudentAiMode.SECURITY) return false;
 
         if (target == null || !target.isAlive()) return false;
+
+        Player owner = resolveOwner();
+        if (owner != null && owner.level() == mob.level()) {
+            double dOwner = mob.distanceToSqr(owner);
+            if (dOwner > 22.0 * 22.0) return false;
+        }
 
         WeaponSpec spec = WeaponSpecs.forStudent(student.getStudentId());
         double keep = spec.range + 8.0;

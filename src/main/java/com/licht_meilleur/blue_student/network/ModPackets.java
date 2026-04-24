@@ -16,6 +16,7 @@ import com.licht_meilleur.blue_student.state.StudentWorldState;
 import com.licht_meilleur.blue_student.student.IStudentEntity;
 import com.licht_meilleur.blue_student.student.StudentAiMode;
 import com.licht_meilleur.blue_student.student.StudentId;
+import com.licht_meilleur.blue_student.util.DimensionTransferHelper;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.BlockPos;
@@ -286,61 +287,66 @@ public final class ModPackets {
                 StudentWorldState state = StudentWorldState.get(level);
 
                 StudentId sid = parseStudentId(payload.studentId());
-                UUID uuid = state.getStudentUuid(sid);
-                if (uuid == null) return;
+                StudentWorldState.StudentData data = state.getData(sid);
+                if (data == null) return;
 
                 BlockPos spawn = payload.tabletPos().above();
 
-                // まず今のディメンションにいるか確認
-                Entity found = level.getEntity(uuid);
-                if (found != null && found.isAlive()) {
-                    if (!(found instanceof AbstractStudentEntity student)) {
+                // =========================
+                // ① 同ディメンション
+                // =========================
+                if (data.uuid != null) {
+                    Entity found = level.getEntity(data.uuid);
+                    if (found instanceof AbstractStudentEntity student && student.isAlive()) {
+
+                        student.teleportToWorldForCallback(level, spawn, player.getYRot());
+                        state.setStudent(sid, student.getUUID(), player.getUUID(), level, spawn);
                         return;
                     }
+                }
 
-                    UUID owner = student.getOwnerUuid();
-                    if (owner == null || !owner.equals(player.getUUID())) {
-                        return;
+                // =========================
+                // ② 記録ディメンション
+                // =========================
+                if (data.dimension != null && data.uuid != null) {
+                    ServerLevel oldLevel = server.getLevel(
+                            ResourceKey.create(Registries.DIMENSION, Identifier.parse(data.dimension))
+                    );
+
+                    if (oldLevel != null) {
+                        Entity other = oldLevel.getEntity(data.uuid);
+
+                        if (other instanceof AbstractStudentEntity student && student.isAlive()) {
+
+                            student.teleportToWorldForCallback(level, spawn, player.getYRot());
+                            state.setStudent(sid, student.getUUID(), player.getUUID(), level, spawn);
+                            return;
+                        }
                     }
+                }
 
-                    found.setPos(spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5);
-                    found.setYRot(player.getYRot());
-                    found.setXRot(0.0f);
-                    state.setStudent(sid, found.getUUID(), owner, level, spawn);
+                // =========================
+                // ③ packed復元
+                // =========================
+                AbstractStudentEntity spawned =
+                        DimensionTransferHelper.spawnPackedStudent(level, sid, spawn, player.getYRot());
+
+                if (spawned != null) {
                     return;
                 }
 
-                // 別ディメンション側を探す
-                StudentWorldState.StudentData data = state.getData(sid);
-                if (data == null || data.dimension == null) return;
+                // =========================
+                // ④ 最終 fallback（新規生成）
+                // =========================
+                AbstractStudentEntity fallback = DimensionTransferHelper.createStudent(sid, level);
+                if (fallback == null) return;
 
-                ResourceKey<Level> key = ResourceKey.create(
-                        Registries.DIMENSION,
-                        Identifier.parse(data.dimension)
-                );
+                fallback.setPos(spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5);
+                fallback.setOwnerUuid(player.getUUID());
 
-                ServerLevel oldLevel = server.getLevel(key);
-                if (oldLevel == null) return;
-
-                Entity other = oldLevel.getEntity(uuid);
-                if (!(other instanceof AbstractStudentEntity ase) || !other.isAlive()) return;
-
-                UUID owner = ase.getOwnerUuid();
-                if (owner == null || !owner.equals(player.getUUID())) {
-                    return;
-                }
-
-                if (ase.isLifeLockedForGoal()) {
-                    player.sendSystemMessage(Component.literal("Student is respawning..."));
-                    return;
-                }
-
-                boolean ok = ase.teleportToWorldForCallback(level, spawn, player.getYRot());
-                if (ok) {
-                    state.setStudent(sid, ase.getUUID(), owner, level, spawn);
-                }
+                level.addFreshEntity(fallback);
+                state.setStudent(sid, fallback.getUUID(), player.getUUID(), level, spawn);
             });
-
         });
 
         ServerPlayNetworking.registerGlobalReceiver(CraftChamberCraftPayload.TYPE, (payload, context) -> {

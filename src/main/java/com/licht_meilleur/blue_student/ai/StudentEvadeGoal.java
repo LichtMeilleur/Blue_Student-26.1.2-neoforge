@@ -52,10 +52,14 @@ public class StudentEvadeGoal extends Goal {
         StudentAiMode mode = student.getAiMode();
         if (mob instanceof AbstractStudentEntity ase && ase.isBrActionActiveServer()) return false;
         if (mode != StudentAiMode.FOLLOW && mode != StudentAiMode.SECURITY) return false;
+        if (mob.level().isClientSide()) return false;
 
         if (mob.tickCount - lastEvadeStartAge < EVADE_GLOBAL_COOLDOWN) return false;
 
-        target = findNearestHostile();
+        target = mob.getTarget();
+        if (target == null || !target.isAlive()) {
+            target = findNearestHostile();
+        }
         if (target == null) return false;
 
         WeaponSpec spec = WeaponSpecs.forStudent(student.getStudentId());

@@ -49,12 +49,11 @@ public class StudentAimGoal extends Goal {
 
     @Override
     public boolean canUse() {
-        StudentAiMode mode = student.getAiMode();
-        if (mode == StudentAiMode.FOLLOW || mode == StudentAiMode.SECURITY) return true;
+        if (student.getAiMode() != StudentAiMode.FOLLOW
+                && student.getAiMode() != StudentAiMode.SECURITY) return false;
 
-        if (mob instanceof NozomiEntity n && n.isTrainSkillActive()) return true;
-
-        return false;
+        LivingEntity target = mob.getTarget();
+        return target != null && target.isAlive();
     }
 
     @Override

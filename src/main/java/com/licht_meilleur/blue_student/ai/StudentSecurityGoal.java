@@ -3,6 +3,7 @@ package com.licht_meilleur.blue_student.ai;
 import com.licht_meilleur.blue_student.student.IStudentEntity;
 import com.licht_meilleur.blue_student.student.StudentAiMode;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.goal.Goal;
 
@@ -34,12 +35,22 @@ public class StudentSecurityGoal extends Goal {
 
     @Override
     public boolean canUse() {
-        return student.getAiMode() == StudentAiMode.SECURITY;
+        if (student.getAiMode() != StudentAiMode.SECURITY) return false;
+
+        LivingEntity target = mob.getTarget();
+        if (target != null && target.isAlive()) return false;
+
+        return true;
     }
 
     @Override
     public boolean canContinueToUse() {
-        return student.getAiMode() == StudentAiMode.SECURITY;
+        if (student.getAiMode() != StudentAiMode.SECURITY) return false;
+
+        LivingEntity target = mob.getTarget();
+        if (target != null && target.isAlive()) return false;
+
+        return true;
     }
 
     @Override

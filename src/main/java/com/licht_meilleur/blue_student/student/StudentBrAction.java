@@ -7,6 +7,8 @@ public enum StudentBrAction {
     //＝＝＝＝＝ホシノ＝＝＝＝＝＝＝
 
     MAIN_SHOT(IStudentEntity.ShotKind.MAIN, 4, 8),
+    //ガードしながらショットガン
+    GUARD_SHOT(IStudentEntity.ShotKind.MAIN, 4, 8),
 
     // バックステップしながらショットガン（4tick想定）
     DODGE_SHOT(IStudentEntity.ShotKind.MAIN, 4, 8),

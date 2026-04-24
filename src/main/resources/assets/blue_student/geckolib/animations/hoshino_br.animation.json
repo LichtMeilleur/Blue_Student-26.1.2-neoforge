@@ -2398,7 +2398,7 @@
 			"bones": {
 				"MAllBody": {
 					"rotation": {
-						"vector": [42.5, 0, 0]
+						"vector": [137.0252, 84.6609, 94.7418]
 					}
 				},
 				"Head": {
@@ -2501,7 +2501,7 @@
 			"bones": {
 				"MAllBody": {
 					"rotation": {
-						"vector": [42.5, 0, 0]
+						"vector": [366.2382, -76.1958, -329.9786]
 					}
 				},
 				"Head": {
@@ -2891,6 +2891,5 @@
 				}
 			}
 		}
-	},
-	"geckolib_format_version": 2
+	}
 }

@@ -117,31 +117,21 @@ public class HikariEntity extends AbstractStudentEntity {
         this.goalSelector.addGoal(1, new FloatGoal(this));
 
         this.goalSelector.addGoal(2, new HikariGunTrainGoal(this));
-        this.goalSelector.addGoal(3, new StudentAimGoal(this, this));
+        this.goalSelector.addGoal(3, new StudentEvadeGoal(this, this));
         this.goalSelector.addGoal(4, new StudentStuckEscapeGoal(this, this));
-        this.goalSelector.addGoal(5, new StudentEvadeGoal(this, this));
-        this.goalSelector.addGoal(6, new PanicGoal(this, 1.25));
-        this.goalSelector.addGoal(7, new StudentReturnToOwnerGoal(this, this, 1.35, 28.0, 2.5, 48.0, 20));
-        this.goalSelector.addGoal(8, new AvoidEntityGoal<>(this, Monster.class, 8.0f, 1.0, 1.35));
-        this.goalSelector.addGoal(9, new StudentCombatGoal(this, this));
+        this.goalSelector.addGoal(5, new StudentCliffAvoidGoal(this));
+        this.goalSelector.addGoal(6, new StudentReturnToOwnerGoal(this, this, 1.35, 28.0, 2.5, 48.0, 20));
+
+        this.goalSelector.addGoal(7, new StudentAimGoal(this, this));
+        this.goalSelector.addGoal(8, new StudentCombatGoal(this, this));
+        this.goalSelector.addGoal(9, new PanicGoal(this, 1.25));
 
         this.goalSelector.addGoal(10, new StudentFollowGoal(this, this, 1.1));
-        this.goalSelector.addGoal(11, new StudentSecurityGoal(
-                this,
-                this,
+        this.goalSelector.addGoal(11, new StudentSecurityGoal(this, this,
                 new StudentSecurityGoal.ISecurityPosProvider() {
-                    @Override
-                    public BlockPos getSecurityPos() {
-                        return HikariEntity.this.getSecurityPos();
-                    }
-
-                    @Override
-                    public void setSecurityPos(BlockPos pos) {
-                        HikariEntity.this.setSecurityPos(pos);
-                    }
-                },
-                1.0
-        ));
+                    @Override public BlockPos getSecurityPos() { return HikariEntity.this.getSecurityPos(); }
+                    @Override public void setSecurityPos(BlockPos pos) { HikariEntity.this.setSecurityPos(pos); }
+                }, 1.0));
         this.goalSelector.addGoal(12, new StudentEatGoal(this, this));
     }
 

@@ -35,6 +35,13 @@ public class HikariGunTrainGoal extends Goal {
 
     @Override
     public boolean canUse() {
+        if (hikari.level().isClientSide()) return false;
+        if (hikari.isLifeLockedForGoal()) return false;
+        if (!hikari.canUseGunTrainSkill()) return false;
+
+        LivingEntity target = hikari.getTarget();
+        if (target == null || !target.isAlive()) return false;
+
         if (hikari.level() instanceof ServerLevel sw) {
             UUID ownerP = hikari.getOwnerUuid();
             if (ownerP != null) {
@@ -48,9 +55,7 @@ public class HikariGunTrainGoal extends Goal {
             }
         }
 
-        return !hikari.level().isClientSide()
-                && !hikari.isLifeLockedForGoal()
-                && hikari.canUseGunTrainSkill();
+        return true;
     }
 
     @Override

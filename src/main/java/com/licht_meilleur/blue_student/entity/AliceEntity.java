@@ -144,36 +144,24 @@ public class AliceEntity extends AbstractStudentEntity {
         this.goalSelector.addGoal(0, new StudentRideWithOwnerGoal(this, this));
         this.goalSelector.addGoal(1, new FloatGoal(this));
 
-        this.goalSelector.addGoal(2, new StudentAimGoal(this, this));
+        this.goalSelector.addGoal(2, new StudentEvadeGoal(this, this));
         this.goalSelector.addGoal(3, new StudentStuckEscapeGoal(this, this));
-        this.goalSelector.addGoal(4, new StudentEvadeGoal(this, this));
-        this.goalSelector.addGoal(5, new PanicGoal(this, 1.25));
+        this.goalSelector.addGoal(4, new StudentCliffAvoidGoal(this));
+        this.goalSelector.addGoal(5, new StudentReturnToOwnerGoal(this, this, 1.35, 28.0, 2.5, 48.0, 20));
+        this.goalSelector.addGoal(6, new StudentAimGoal(this, this));
+        this.goalSelector.addGoal(7, new AliceHyperShotGoal(this, this));
+        this.goalSelector.addGoal(8, new AliceBrCombatGoal(this, this));
+        this.goalSelector.addGoal(9, new StudentCombatGoal(this, this));
 
-        this.goalSelector.addGoal(6, new StudentReturnToOwnerGoal(this, this, 1.35, 28.0, 2.5, 48.0, 20));
-        this.goalSelector.addGoal(7, new AvoidEntityGoal<>(this, Monster.class, 8.0f, 1.0, 1.35));
+        this.goalSelector.addGoal(10, new PanicGoal(this, 1.25));
 
-        this.goalSelector.addGoal(9, new AliceHyperShotGoal(this, this));
-        this.goalSelector.addGoal(10, new AliceBrCombatGoal(this, this));
-        this.goalSelector.addGoal(11, new StudentCombatGoal(this, this));
-
-        this.goalSelector.addGoal(12, new StudentFollowGoal(this, this, 1.1));
-        this.goalSelector.addGoal(13, new StudentSecurityGoal(
-                this,
-                this,
+        this.goalSelector.addGoal(11, new StudentFollowGoal(this, this, 1.1));
+        this.goalSelector.addGoal(12, new StudentSecurityGoal(this, this,
                 new StudentSecurityGoal.ISecurityPosProvider() {
-                    @Override
-                    public BlockPos getSecurityPos() {
-                        return AliceEntity.this.getSecurityPos();
-                    }
-
-                    @Override
-                    public void setSecurityPos(BlockPos pos) {
-                        AliceEntity.this.setSecurityPos(pos);
-                    }
-                },
-                1.0
-        ));
-        this.goalSelector.addGoal(14, new StudentEatGoal(this, this));
+                    @Override public BlockPos getSecurityPos() { return AliceEntity.this.getSecurityPos(); }
+                    @Override public void setSecurityPos(BlockPos pos) { AliceEntity.this.setSecurityPos(pos); }
+                }, 1.0));
+        this.goalSelector.addGoal(13, new StudentEatGoal(this, this));
     }
 
     public void requestHyperShot() {

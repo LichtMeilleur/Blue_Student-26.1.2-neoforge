@@ -1,15 +1,7 @@
 package com.licht_meilleur.blue_student.entity;
 
 import com.geckolib.animation.RawAnimation;
-import com.licht_meilleur.blue_student.ai.StudentAimGoal;
-import com.licht_meilleur.blue_student.ai.StudentCombatGoal;
-import com.licht_meilleur.blue_student.ai.StudentEatGoal;
-import com.licht_meilleur.blue_student.ai.StudentEvadeGoal;
-import com.licht_meilleur.blue_student.ai.StudentFollowGoal;
-import com.licht_meilleur.blue_student.ai.StudentReturnToOwnerGoal;
-import com.licht_meilleur.blue_student.ai.StudentRideWithOwnerGoal;
-import com.licht_meilleur.blue_student.ai.StudentSecurityGoal;
-import com.licht_meilleur.blue_student.ai.StudentStuckEscapeGoal;
+import com.licht_meilleur.blue_student.ai.*;
 import com.licht_meilleur.blue_student.ai.only.ShirokoDroneGoal;
 import com.licht_meilleur.blue_student.bed.BedLinkManager;
 import com.licht_meilleur.blue_student.student.IStudentEntity;
@@ -100,11 +92,17 @@ public class ShirokoEntity extends AbstractStudentEntity {
         this.goalSelector.addGoal(2, new ShirokoDroneGoal(this));
         this.goalSelector.addGoal(3, new StudentEvadeGoal(this, this));
         this.goalSelector.addGoal(4, new StudentStuckEscapeGoal(this, this));
-        this.goalSelector.addGoal(5, new StudentCombatGoal(this, this));
-        this.goalSelector.addGoal(6, new StudentAimGoal(this, this));
-        this.goalSelector.addGoal(7, new PanicGoal(this, 1.25));
-        this.goalSelector.addGoal(8, new StudentReturnToOwnerGoal(this, this, 1.35, 28.0, 2.5, 48.0, 20));
+
+        this.goalSelector.addGoal(5, new StudentCliffAvoidGoal(this));
+
+        this.goalSelector.addGoal(6, new StudentReturnToOwnerGoal(this, this, 1.35, 28.0, 2.5, 48.0, 20));
+
+
+        this.goalSelector.addGoal(7, new StudentAimGoal(this, this));
+        this.goalSelector.addGoal(8, new StudentCombatGoal(this, this));
+        this.goalSelector.addGoal(9, new PanicGoal(this, 1.25));
         this.goalSelector.addGoal(10, new StudentFollowGoal(this, this, 1.1));
+
         this.goalSelector.addGoal(11, new StudentSecurityGoal(this, this,
                 new StudentSecurityGoal.ISecurityPosProvider() {
                     @Override

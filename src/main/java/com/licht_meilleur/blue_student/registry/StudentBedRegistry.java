@@ -21,4 +21,8 @@ public class StudentBedRegistry {
     public static void clear(StudentId id) {
         BEDS.remove(id);
     }
+
+    public static void remove(StudentId sid) {
+        BEDS.remove(sid);
+    }
 }

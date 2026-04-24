@@ -4,6 +4,7 @@ import com.licht_meilleur.blue_student.student.IStudentEntity;
 import com.licht_meilleur.blue_student.student.StudentAiMode;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.PathfinderMob;
@@ -53,8 +54,15 @@ public class StudentFollowGoal extends Goal {
     @Override
     public boolean canUse() {
         if (student.getAiMode() != StudentAiMode.FOLLOW) return false;
+
         owner = resolveOwnerOnly();
-        return owner != null && owner.isAlive();
+        if (owner == null || !owner.isAlive()) return false;
+        if (owner.level() != mob.level()) return false;
+
+        LivingEntity target = mob.getTarget();
+        if (target != null && target.isAlive()) return false;
+
+        return true;
     }
 
     @Override
@@ -64,6 +72,10 @@ public class StudentFollowGoal extends Goal {
 
         UUID uuid = student.getOwnerUuid();
         if (uuid == null || !uuid.equals(owner.getUUID())) return false;
+        if (owner.level() != mob.level()) return false;
+
+        LivingEntity target = mob.getTarget();
+        if (target != null && target.isAlive()) return false;
 
         return mob.distanceToSqr(owner) > (STOP_DIST * STOP_DIST);
     }

@@ -24,6 +24,8 @@ import com.licht_meilleur.blue_student.network.ModPackets;
 import com.licht_meilleur.blue_student.registry.ModEntities;
 import com.licht_meilleur.blue_student.registry.ModItemGroups;
 import com.licht_meilleur.blue_student.registry.ModScreenHandlers;
+import com.licht_meilleur.blue_student.state.StudentDimensionSyncManager;
+import com.licht_meilleur.blue_student.state.StudentRespawnManager;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.object.builder.v1.block.entity.FabricBlockEntityTypeBuilder;
 import net.fabricmc.fabric.api.object.builder.v1.entity.FabricDefaultAttributeRegistry;
@@ -264,6 +266,8 @@ public class BlueStudentMod implements ModInitializer {
 
         ModEntities.register();
         ModLoot.init();
+        StudentRespawnManager.register();
+        StudentDimensionSyncManager.register();
 
         FabricDefaultAttributeRegistry.register(SHIROKO, AbstractStudentEntity.createAttributes());
         FabricDefaultAttributeRegistry.register(HOSHINO, AbstractStudentEntity.createAttributes());

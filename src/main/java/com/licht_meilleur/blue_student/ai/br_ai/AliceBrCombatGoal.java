@@ -1,5 +1,6 @@
 package com.licht_meilleur.blue_student.ai.br_ai;
 
+import com.licht_meilleur.blue_student.entity.AbstractStudentEntity;
 import com.licht_meilleur.blue_student.entity.AliceEntity;
 import com.licht_meilleur.blue_student.student.IStudentEntity;
 import com.licht_meilleur.blue_student.student.StudentBrAction;
@@ -9,11 +10,13 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Comparator;
 import java.util.EnumSet;
@@ -60,7 +63,22 @@ public class AliceBrCombatGoal extends Goal {
 
         target = findTarget();
         if (target != null) mob.setTarget(target);
+
+        Player owner = resolveOwner();
+        if (owner != null && owner.level() == mob.level()) {
+            double dOwner = mob.distanceToSqr(owner);
+            if (dOwner > 22.0 * 22.0) return false;
+        }
         return target != null;
+    }
+
+    @Nullable
+    private Player resolveOwner() {
+        if (alice instanceof AbstractStudentEntity se) {
+            Player p = se.getOwnerPlayer();
+            if (p != null) return p;
+        }
+        return null;
     }
 
     @Override

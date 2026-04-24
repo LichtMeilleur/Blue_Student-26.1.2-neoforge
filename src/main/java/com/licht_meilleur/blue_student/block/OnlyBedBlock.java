@@ -2,9 +2,11 @@ package com.licht_meilleur.blue_student.block;
 
 import com.licht_meilleur.blue_student.block.entity.OnlyBedBlockEntity;
 import com.licht_meilleur.blue_student.registry.StudentBedRegistry;
+import com.licht_meilleur.blue_student.state.StudentWorldState;
 import com.licht_meilleur.blue_student.student.StudentId;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
@@ -105,16 +107,16 @@ public class OnlyBedBlock extends Block implements EntityBlock {
         if (state == null || !state.is(this)) {
             return null;
         }
-        if (!state.hasProperty(HALF) || !state.hasProperty(FACING)) {
+        if (!state.hasProperty(PART) || !state.hasProperty(FACING)) {
             return null;
         }
 
-        DoubleBlockHalf half = state.getValue(HALF);
+        BedPart part = state.getValue(PART);
         Direction facing = state.getValue(FACING);
 
-        return half == DoubleBlockHalf.LOWER
-                ? pos.above()
-                : pos.below();
+        return part == BedPart.FOOT
+                ? pos.relative(facing)
+                : pos.relative(facing.getOpposite());
     }
 
     @Override
@@ -178,4 +180,38 @@ public class OnlyBedBlock extends Block implements EntityBlock {
 
         StudentBedRegistry.set(sid, pos);
     }
+
+    @Override
+    public BlockState playerWillDestroy(Level level, BlockPos pos, BlockState state, Player player) {
+        if (!level.isClientSide() && level instanceof ServerLevel sl) {
+            BlockPos otherPos = findOtherHalfPos(level, pos, state);
+            if (otherPos != null) {
+                BlockState otherState = level.getBlockState(otherPos);
+                if (otherState.is(this)) {
+                    level.destroyBlock(otherPos, false);
+                }
+            }
+
+            StudentWorldState stateData = StudentWorldState.get(sl);
+
+            for (StudentId sid : StudentId.values()) {
+                BlockPos bed = stateData.getBed(sid);
+                if (bed != null && (bed.equals(pos) || (otherPos != null && bed.equals(otherPos)) || bed.closerThan(pos, 1.5))) {
+                    stateData.clearBed(sid);
+                }
+            }
+
+            StudentId sid = state.getValue(STUDENT);
+            BlockPos reg = StudentBedRegistry.get(sid);
+            if (reg != null && (reg.equals(pos) || (otherPos != null && reg.equals(otherPos)) || reg.closerThan(pos, 1.5))) {
+                StudentBedRegistry.remove(sid);
+            }
+        }
+
+        return super.playerWillDestroy(level, pos, state, player);
+    }
+
+
+
+
 }

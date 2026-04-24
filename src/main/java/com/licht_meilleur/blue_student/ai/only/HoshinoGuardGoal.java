@@ -3,6 +3,7 @@ package com.licht_meilleur.blue_student.ai.only;
 import com.licht_meilleur.blue_student.entity.HoshinoEntity;
 import com.licht_meilleur.blue_student.student.IStudentEntity;
 import com.licht_meilleur.blue_student.student.StudentForm;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
 
 public class HoshinoGuardGoal extends Goal {
@@ -20,19 +21,24 @@ public class HoshinoGuardGoal extends Goal {
     @Override
     public boolean canUse() {
         if (mob.getForm() == StudentForm.BR) return false;
-        return mob.isGuarding() && student.hasQueuedFire(IStudentEntity.FireChannel.MAIN);
+        LivingEntity target = mob.getTarget();
+        return target != null && target.isAlive()
+                && mob.isGuarding()
+                && student.hasQueuedFire(IStudentEntity.FireChannel.MAIN);
+    }
+
+
+
+    @Override
+    public boolean canContinueToUse() {
+        if (mob.getForm() == StudentForm.BR) return false;
+        return mob.isGuarding() && keepTicks > 0;
     }
 
     @Override
     public void start() {
         mob.setGuardShooting(true);
         keepTicks = 8;
-    }
-
-    @Override
-    public boolean canContinueToUse() {
-        if (mob.getForm() == StudentForm.BR) return false;
-        return mob.isGuarding() && keepTicks > 0;
     }
 
     @Override
