@@ -46,6 +46,8 @@ public class GunTrainShellEntity extends Entity {
     private static final double CURVE_FORCE = 0.10;
     private static final double UP_FORCE = 0.015;
 
+    private static final ItemStack RENDER_STACK = new ItemStack(Items.FIREWORK_ROCKET);
+
     private int curveSign = 1;
 
     public GunTrainShellEntity(EntityType<?> type, Level level) {
@@ -89,7 +91,17 @@ public class GunTrainShellEntity extends Entity {
         }
 
         Vec3 cur = this.position();
-        serverLevel.sendParticles(ParticleTypes.SMOKE, cur.x, cur.y, cur.z, 1, 0.02, 0.02, 0.02, 0.001);
+        serverLevel.sendParticles(ParticleTypes.FLAME, cur.x, cur.y, cur.z, 1, 0, 0, 0, 0);
+        serverLevel.sendParticles(ParticleTypes.SMOKE, cur.x, cur.y, cur.z, 2, 0.02, 0.02, 0.02, 0.001);
+        serverLevel.sendParticles(ParticleTypes.CRIT, cur.x, cur.y, cur.z, 1, 0, 0, 0, 0);
+
+        Vec3 back = this.getDeltaMovement().normalize().scale(-0.2);
+
+        serverLevel.sendParticles(ParticleTypes.FLAME,
+                cur.x + back.x,
+                cur.y + back.y,
+                cur.z + back.z,
+                1, 0, 0, 0, 0);
 
         steerMissile(serverLevel);
         updateRotationFromVelocity();

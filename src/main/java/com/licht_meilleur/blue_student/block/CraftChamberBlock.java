@@ -2,11 +2,17 @@ package com.licht_meilleur.blue_student.block;
 
 import com.licht_meilleur.blue_student.BlueStudentMod;
 import com.licht_meilleur.blue_student.block.entity.CraftChamberBlockEntity;
+import com.licht_meilleur.blue_student.inventory.CraftChamberMenuData;
+import net.fabricmc.fabric.api.menu.v1.ExtendedMenuProvider;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.Level;
@@ -116,14 +122,34 @@ public class CraftChamberBlock extends Block implements EntityBlock {
             return InteractionResult.SUCCESS;
         }
 
-        BlockPos basePos = state.getValue(HALF) == DoubleBlockHalf.UPPER ? pos.below() : pos;
-        BlockEntity be = level.getBlockEntity(basePos);
-
-        if (be instanceof CraftChamberBlockEntity chamber) {
-            player.openMenu(chamber);
+        if (!(player instanceof ServerPlayer serverPlayer)) {
             return InteractionResult.CONSUME;
         }
 
-        return InteractionResult.PASS;
+        BlockPos basePos = state.getValue(HALF) == DoubleBlockHalf.UPPER ? pos.below() : pos;
+        BlockEntity be = level.getBlockEntity(basePos);
+
+        if (!(be instanceof CraftChamberBlockEntity chamber)) {
+            return InteractionResult.PASS;
+        }
+
+        serverPlayer.openMenu(new ExtendedMenuProvider<CraftChamberMenuData>() {
+            @Override
+            public CraftChamberMenuData getScreenOpeningData(ServerPlayer player) {
+                return new CraftChamberMenuData(basePos);
+            }
+
+            @Override
+            public Component getDisplayName() {
+                return chamber.getDisplayName();
+            }
+
+            @Override
+            public AbstractContainerMenu createMenu(int syncId, Inventory inv, Player player) {
+                return chamber.createMenu(syncId, inv, player);
+            }
+        });
+
+        return InteractionResult.CONSUME;
     }
 }

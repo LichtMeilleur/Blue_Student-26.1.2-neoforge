@@ -11,6 +11,8 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.StringWidget;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -66,17 +68,7 @@ public class StudentScreen extends AbstractContainerScreen<StudentScreenHandler>
         IStudentEntity se = this.menu.entity;
         StudentId sid = se != null ? se.getStudentId() : StudentId.SHIROKO;
 
-        this.addRenderableWidget(
-                Button.builder(Component.empty(), button -> this.sendModeByIndex(0))
-                        .bounds(this.leftPos + AI_FOLLOW_X - 10, this.topPos + AI_FOLLOW_Y - 8, 90, 22)
-                        .build()
-        );
 
-        this.addRenderableWidget(
-                Button.builder(Component.empty(), button -> this.sendModeByIndex(1))
-                        .bounds(this.leftPos + AI_SEC_X - 10, this.topPos + AI_SEC_Y - 8, 110, 22)
-                        .build()
-        );
 
         this.addRenderableWidget(new StringWidget(
                 this.leftPos + 95,
@@ -206,6 +198,22 @@ public class StudentScreen extends AbstractContainerScreen<StudentScreenHandler>
         int ax = x + (onFirst ? ARROW_FOLLOW_X : ARROW_SEC_X);
         int ay = y + (onFirst ? ARROW_FOLLOW_Y : ARROW_SEC_Y);
         graphics.blit(RenderPipelines.GUI_TEXTURED, ARROW, ax, ay, 0.0F, 0.0F, 16, 16, 16, 16);
+
+        if (se instanceof LivingEntity living) {
+            InventoryScreen.extractEntityInInventoryFollowsMouse(
+                    graphics,
+                    x + 22,   // 表示枠 左
+                    y + 0,   // 表示枠 上
+                    x + 100,  // 表示枠 右
+                    y + 70,  // 表示枠 下
+                    35,       // 大きさ
+                    0.0625F,
+                    mouseX,
+                    mouseY,
+                    living
+            );
+        }
+
     }
 
     @Override
@@ -223,6 +231,38 @@ public class StudentScreen extends AbstractContainerScreen<StudentScreenHandler>
         }
 
         ClientPlayNetworking.send(new ModPackets.SetAiModePayload(entity.getId(), modeId));
+    }
+
+    @Override
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        double mouseX = event.x();
+        double mouseY = event.y();
+
+        if (event.button() == 0) {
+            if (isInside(mouseX, mouseY,
+                    this.leftPos + AI_FOLLOW_X - 10,
+                    this.topPos + AI_FOLLOW_Y - 8,
+                    90,
+                    22)) {
+                this.sendModeByIndex(0);
+                return true;
+            }
+
+            if (isInside(mouseX, mouseY,
+                    this.leftPos + AI_SEC_X - 10,
+                    this.topPos + AI_SEC_Y - 8,
+                    110,
+                    22)) {
+                this.sendModeByIndex(1);
+                return true;
+            }
+        }
+
+        return super.mouseClicked(event, doubleClick);
+    }
+
+    private boolean isInside(double mouseX, double mouseY, int x, int y, int w, int h) {
+        return mouseX >= x && mouseY >= y && mouseX < x + w && mouseY < y + h;
     }
 
     private void sendModeByIndex(int index) {

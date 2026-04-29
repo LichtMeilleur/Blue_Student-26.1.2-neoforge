@@ -105,10 +105,21 @@ public class CraftChamberScreen extends AbstractContainerScreen<CraftChamberScre
         this.drawSlotIcon(graphics, recipe.slot6(), slot6X, slot6Y);
         this.drawSlotIcon(graphics, recipe.slot9(), slot9X, slot9Y);
 
-        int outX = this.leftPos + 122;
-        int outY = this.topPos + 125;
-        this.drawItem(graphics, recipe.output(), outX, outY);
+        // ===== 中央アイテム（拡大） =====
+        float scale = 4.0f;
+        int outX = this.leftPos + 128;
+        int outY = this.topPos + 128;
 
+        graphics.pose().pushMatrix();
+        graphics.pose().translate(outX, outY);
+        graphics.pose().scale(scale, scale);
+
+        graphics.item(recipe.output(), -8, -8);
+        graphics.itemDecorations(this.font, recipe.output(), -8, -8);
+
+        graphics.pose().popMatrix();
+
+        // ===== 素材リスト =====
         int listX = this.leftPos + 200;
         int listY = this.topPos + 150;
         int stepY = 18;
@@ -116,9 +127,22 @@ public class CraftChamberScreen extends AbstractContainerScreen<CraftChamberScre
         int i = 0;
         for (IngredientStack cost : recipe.costs()) {
             ItemStack stack = cost.toStack();
+
             int ix = listX;
             int iy = listY + i * stepY;
-            this.drawItem(graphics, stack, ix, iy);
+
+            graphics.item(stack, ix, iy);
+            graphics.itemDecorations(this.font, stack, ix, iy);
+
+            graphics.text(
+                    this.font,
+                    "x" + cost.count(),
+                    ix + 18,
+                    iy + 5,
+                    0xFFFFFF,
+                    true
+            );
+
             i++;
         }
     }
@@ -136,16 +160,8 @@ public class CraftChamberScreen extends AbstractContainerScreen<CraftChamberScre
     }
 
     private void drawItem(GuiGraphicsExtractor graphics, ItemStack stack, int x, int y) {
-        if (stack == null || stack.isEmpty()) {
-            return;
-        }
+        if (stack == null || stack.isEmpty()) return;
 
-        /*
-         * TODO:
-         * GuiGraphicsExtractor 側の item 描画 API 名がまだ未確定。
-         * 候補: drawItem / renderItem 系
-         * ここは IDE の候補に合わせて 1 行だけ置換する。
-         */
-        // graphics.drawItem(stack, x, y);
+        graphics.item(stack, x, y);
     }
 }
