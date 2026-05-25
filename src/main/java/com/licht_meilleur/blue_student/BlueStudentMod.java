@@ -27,6 +27,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.loading.FMLEnvironment;
@@ -256,7 +257,7 @@ public class BlueStudentMod {
         modBus.addListener(this::registerAttributes);
         modBus.addListener(ModPackets::register);
 
-        if (FMLEnvironment.dist.isClient()) {
+        if (FMLEnvironment.dist == Dist.CLIENT) {
             modBus.register(BlueStudentClient.class);
         }
 

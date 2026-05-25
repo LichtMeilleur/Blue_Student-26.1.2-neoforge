@@ -1,0 +1,31 @@
+license="All Rights Reserved"
+
+[[mods]]
+modId="blue_student"
+version="1.4.3"
+displayName="Blue Student"
+authors="LichtMeilleur"
+description='''
+Blue Archive inspired student companion mod.
+'''
+
+[[dependencies.blue_student]]
+modId="neoforge"
+type="required"
+versionRange="[26.1.2.42-beta,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.blue_student]]
+modId="minecraft"
+type="required"
+versionRange="[26.1.2]"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.blue_student]]
+modId="geckolib"
+type="required"
+versionRange="[5.5.1,)"
+ordering="AFTER"
+side="BOTH"
