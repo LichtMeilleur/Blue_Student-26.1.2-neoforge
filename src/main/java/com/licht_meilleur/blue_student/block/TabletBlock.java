@@ -102,7 +102,7 @@ public class TabletBlock extends Block implements EntityBlock {
         BlockState otherState = level.getBlockState(otherPos);
 
         if (!level.isClientSide()) {
-            popResource(level, basePos, new ItemStack(BlueStudentMod.TABLET_BLOCK_ITEM));
+            popResource(level, basePos, new ItemStack(BlueStudentMod.TABLET_BLOCK_ITEM.get()));
 
             if (otherState.is(this) && otherState.getValue(HALF) != half) {
                 level.setBlock(otherPos, Blocks.AIR.defaultBlockState(), 3);

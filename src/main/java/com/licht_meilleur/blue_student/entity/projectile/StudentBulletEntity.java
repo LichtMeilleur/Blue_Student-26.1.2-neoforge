@@ -35,7 +35,7 @@ public class StudentBulletEntity extends Entity {
     }
 
     public StudentBulletEntity(Level level, Entity owner, float damage) {
-        this(BlueStudentMod.STUDENT_BULLET, level);
+        this(BlueStudentMod.STUDENT_BULLET.get(), level);
         this.setOwnerUuid(owner != null ? owner.getUUID() : null);
         this.damage = damage;
         this.setNoGravity(true);

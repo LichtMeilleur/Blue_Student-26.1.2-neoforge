@@ -44,7 +44,7 @@ public class StudentScreenHandler extends AbstractContainerMenu {
     }
 
     public StudentScreenHandler(int syncId, Inventory playerInv, IStudentEntity entity, Container inv9, Container equipInv) {
-        super(ModScreenHandlers.STUDENT_MENU, syncId);
+        super(ModScreenHandlers.STUDENT_MENU.get(), syncId);
         this.entity = entity;
         this.entityId = (entity instanceof Entity e) ? e.getId() : -1;
         this.studentInv = inv9;

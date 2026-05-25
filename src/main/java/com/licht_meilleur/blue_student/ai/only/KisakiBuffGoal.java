@@ -85,7 +85,7 @@ public class KisakiBuffGoal extends Goal {
                         }
 
                         var dragon = new KisakiDragonEntity(
-                                BlueStudentMod.KISAKI_DRAGON,
+                                BlueStudentMod.KISAKI_DRAGON.get(),
                                 serverLevel
                         ).setOwnerAndTarget(kisaki.getUUID(), ownerBest.getUUID());
 
@@ -130,7 +130,7 @@ public class KisakiBuffGoal extends Goal {
                 }
 
                 var dragon = new KisakiDragonEntity(
-                        BlueStudentMod.KISAKI_DRAGON,
+                        BlueStudentMod.KISAKI_DRAGON.get(),
                         serverLevel
                 ).setOwnerAndTarget(kisaki.getUUID(), best.getUUID());
 

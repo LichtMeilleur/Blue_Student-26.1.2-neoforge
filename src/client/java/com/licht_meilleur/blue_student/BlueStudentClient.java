@@ -1,12 +1,12 @@
 package com.licht_meilleur.blue_student;
 
 import com.licht_meilleur.blue_student.client.block.CraftChamberRenderer;
-import com.licht_meilleur.blue_student.client.block.*;
-import com.licht_meilleur.blue_student.client.network.ClientPackets;
-import com.licht_meilleur.blue_student.client.others.go_go_train.GoGoGunTrainRenderer;
-import com.licht_meilleur.blue_student.client.others.go_go_train.GoGoTrainRenderer;
+import com.licht_meilleur.blue_student.client.block.OnlyBedRenderer;
+import com.licht_meilleur.blue_student.client.block.TabletBlockRenderer;
 import com.licht_meilleur.blue_student.client.others.GunTrainRenderer;
 import com.licht_meilleur.blue_student.client.others.TrainRenderer;
+import com.licht_meilleur.blue_student.client.others.go_go_train.GoGoGunTrainRenderer;
+import com.licht_meilleur.blue_student.client.others.go_go_train.GoGoTrainRenderer;
 import com.licht_meilleur.blue_student.client.projectile.BulletRenderer;
 import com.licht_meilleur.blue_student.client.projectile.GunTrainShellRenderer;
 import com.licht_meilleur.blue_student.client.projectile.SonicBeamRenderer;
@@ -14,52 +14,60 @@ import com.licht_meilleur.blue_student.client.screen.CraftChamberScreen;
 import com.licht_meilleur.blue_student.client.screen.StudentScreen;
 import com.licht_meilleur.blue_student.client.screen.TabletScreen;
 import com.licht_meilleur.blue_student.client.student_renderer.*;
-import com.licht_meilleur.blue_student.client.others.*;
 import com.licht_meilleur.blue_student.registry.ModEntities;
 import com.licht_meilleur.blue_student.registry.ModScreenHandlers;
-import net.fabricmc.api.ClientModInitializer;
-import net.minecraft.client.gui.screens.MenuScreens;
-import net.minecraft.client.renderer.blockentity.BlockEntityRenderers;
-import net.minecraft.client.renderer.entity.EntityRenderers;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.EntityRenderersEvent;
+import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 
-public class BlueStudentClient implements ClientModInitializer {
+@EventBusSubscriber(
+        modid = BlueStudentMod.MOD_ID,
+        bus = EventBusSubscriber.Bus.MOD,
+        value = Dist.CLIENT
+)
+public final class BlueStudentClient {
 
-    @Override
-    public void onInitializeClient() {
-        System.out.println("[BlueStudent] onInitializeClient PRINT");
+    private BlueStudentClient() {
+    }
 
-        ModScreenHandlers.register();
+    @SubscribeEvent
+    public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
 
-        EntityRenderers.register(BlueStudentMod.SHIROKO, ShirokoRenderer::new);
-        EntityRenderers.register(BlueStudentMod.HOSHINO, HoshinoRenderer::new);
-        EntityRenderers.register(BlueStudentMod.HINA, HinaRenderer::new);
-        EntityRenderers.register(BlueStudentMod.KISAKI, KisakiRenderer::new);
-        EntityRenderers.register(BlueStudentMod.ALICE, AliceRenderer::new);
-        EntityRenderers.register(BlueStudentMod.MARIE, MarieRenderer::new);
-        EntityRenderers.register(BlueStudentMod.HIKARI, HikariRenderer::new);
-        EntityRenderers.register(BlueStudentMod.NOZOMI, NozomiRenderer::new);
+        BlueStudentMod.LOGGER.info("[BlueStudentClient] registerRenderers");
 
-        EntityRenderers.register(BlueStudentMod.KISAKI_DRAGON, KisakiDragonRenderer::new);
-        EntityRenderers.register(BlueStudentMod.SHIROKO_DRONE, ShirokoDroneRenderer::new);
-        EntityRenderers.register(ModEntities.TRAIN, TrainRenderer::new);
-        EntityRenderers.register(ModEntities.GUN_TRAIN, GunTrainRenderer::new);
-        EntityRenderers.register(ModEntities.GO_GO_TRAIN, GoGoTrainRenderer::new);
-        EntityRenderers.register(ModEntities.GO_GO_GUN_TRAIN, GoGoGunTrainRenderer::new);
+        event.registerEntityRenderer(BlueStudentMod.SHIROKO.get(), ShirokoRenderer::new);
+        event.registerEntityRenderer(BlueStudentMod.HOSHINO.get(), HoshinoRenderer::new);
+        event.registerEntityRenderer(BlueStudentMod.HINA.get(), HinaRenderer::new);
+        event.registerEntityRenderer(BlueStudentMod.KISAKI.get(), KisakiRenderer::new);
+        event.registerEntityRenderer(BlueStudentMod.ALICE.get(), AliceRenderer::new);
+        event.registerEntityRenderer(BlueStudentMod.MARIE.get(), MarieRenderer::new);
+        event.registerEntityRenderer(BlueStudentMod.HIKARI.get(), HikariRenderer::new);
+        event.registerEntityRenderer(BlueStudentMod.NOZOMI.get(), NozomiRenderer::new);
 
-        EntityRenderers.register(BlueStudentMod.STUDENT_BULLET, BulletRenderer::new);
-        EntityRenderers.register(ModEntities.SONIC_BEAM, SonicBeamRenderer::new);
-        EntityRenderers.register(ModEntities.GUN_TRAIN_SHELL, GunTrainShellRenderer::new);
+        event.registerEntityRenderer(BlueStudentMod.KISAKI_DRAGON.get(), KisakiDragonRenderer::new);
+        event.registerEntityRenderer(BlueStudentMod.SHIROKO_DRONE.get(), ShirokoDroneRenderer::new);
 
-        BlockEntityRenderers.register(BlueStudentMod.TABLET_BE, TabletBlockRenderer::new);
-        BlockEntityRenderers.register(BlueStudentMod.CRAFT_CHAMBER_BE, CraftChamberRenderer::new);
+        event.registerEntityRenderer(ModEntities.TRAIN.get(), TrainRenderer::new);
+        event.registerEntityRenderer(ModEntities.GUN_TRAIN.get(), GunTrainRenderer::new);
+        event.registerEntityRenderer(ModEntities.GO_GO_TRAIN.get(), GoGoTrainRenderer::new);
+        event.registerEntityRenderer(ModEntities.GO_GO_GUN_TRAIN.get(), GoGoGunTrainRenderer::new);
 
-        BlockEntityRenderers.register(BlueStudentMod.ONLY_BED_BE, OnlyBedRenderer::new);
+        event.registerEntityRenderer(BlueStudentMod.STUDENT_BULLET.get(), BulletRenderer::new);
+        event.registerEntityRenderer(ModEntities.SONIC_BEAM.get(), SonicBeamRenderer::new);
+        event.registerEntityRenderer(ModEntities.GUN_TRAIN_SHELL.get(), GunTrainShellRenderer::new);
 
-        MenuScreens.register(ModScreenHandlers.STUDENT_MENU, StudentScreen::new);
-        MenuScreens.register(ModScreenHandlers.CRAFT_CHAMBER_MENU, CraftChamberScreen::new);
+        event.registerBlockEntityRenderer(BlueStudentMod.TABLET_BE.get(), TabletBlockRenderer::new);
+        event.registerBlockEntityRenderer(BlueStudentMod.CRAFT_CHAMBER_BE.get(), CraftChamberRenderer::new);
+        event.registerBlockEntityRenderer(BlueStudentMod.ONLY_BED_BE.get(), OnlyBedRenderer::new);
+    }
+
+    @SubscribeEvent
+    public static void registerScreens(RegisterMenuScreensEvent event) {
+        event.register(ModScreenHandlers.STUDENT_MENU.get(), StudentScreen::new);
+        event.register(ModScreenHandlers.CRAFT_CHAMBER_MENU.get(), CraftChamberScreen::new);
 
         BlueStudentMod.OPEN_TABLET_SCREEN = TabletScreen::open;
-
-        ClientPackets.registerS2C();
     }
 }

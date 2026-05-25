@@ -5,7 +5,6 @@ import com.licht_meilleur.blue_student.student.StudentAiMode;
 import com.licht_meilleur.blue_student.student.StudentId;
 import com.licht_meilleur.blue_student.student.StudentPresenceState;
 import com.licht_meilleur.blue_student.util.DimensionTransferHelper;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
@@ -16,19 +15,19 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
 public final class StudentDimensionSyncManager {
 
     private StudentDimensionSyncManager() {
     }
 
-    public static void register() {
-        ServerTickEvents.END_SERVER_TICK.register(StudentDimensionSyncManager::tick);
+    public static void onServerTick(ServerTickEvent.Post event) {
+        tick(event.getServer());
     }
 
     private static void tick(MinecraftServer server) {
         ServerLevel overworld = server.overworld();
-        if (overworld == null) return;
 
         // 1秒に1回で十分
         if (overworld.getGameTime() % 20 != 0) return;
@@ -46,8 +45,6 @@ public final class StudentDimensionSyncManager {
                     continue;
                 }
 
-                // FOLLOW以外まで強制同期するとSECURITY中の生徒も飛んでくるので、
-                // packedがある場合だけ復元、それ以外は実体が見つかった時にAIを確認する
                 syncOne(server, owner, sid, data, state);
             }
         }
@@ -62,7 +59,6 @@ public final class StudentDimensionSyncManager {
     ) {
         ServerLevel ownerLevel = owner.level();
 
-        // すでに記録上同じディメンションなら何もしない
         String ownerDim = dimensionId(ownerLevel);
         if (ownerDim.equals(data.dimension)) {
             return;
@@ -70,7 +66,6 @@ public final class StudentDimensionSyncManager {
 
         BlockPos spawn = DimensionTransferHelper.findSafeNear(ownerLevel, owner.blockPosition());
 
-        // 1. 記録ディメンションに実体がロード済みなら、同個体優先で転送
         AbstractStudentEntity found = findLoadedStudent(server, data);
         if (found != null && found.isAlive()) {
             if (found.getAiMode() != StudentAiMode.FOLLOW) {
@@ -88,7 +83,6 @@ public final class StudentDimensionSyncManager {
             return;
         }
 
-        // 2. packedがあるなら復元
         if (state.isPacked(sid) || state.getPacked(sid) != null) {
             AbstractStudentEntity spawned =
                     DimensionTransferHelper.spawnPackedStudent(ownerLevel, sid, spawn, owner.getYRot());
@@ -102,7 +96,6 @@ public final class StudentDimensionSyncManager {
             }
         }
 
-        // 3. 見つからない場合はMISSINGにする
         state.markMissing(sid, ownerLevel);
     }
 

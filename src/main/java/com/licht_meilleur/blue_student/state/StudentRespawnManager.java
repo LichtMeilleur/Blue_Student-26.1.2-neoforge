@@ -4,38 +4,31 @@ import com.licht_meilleur.blue_student.entity.AbstractStudentEntity;
 import com.licht_meilleur.blue_student.student.StudentId;
 import com.licht_meilleur.blue_student.student.StudentPresenceState;
 import com.licht_meilleur.blue_student.util.DimensionTransferHelper;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
 public final class StudentRespawnManager {
 
     private StudentRespawnManager() {
     }
 
-    public static void register() {
-        ServerTickEvents.END_SERVER_TICK.register(StudentRespawnManager::tick);
+    public static void onServerTick(ServerTickEvent.Post event) {
+        tick(event.getServer());
     }
 
     private static void tick(MinecraftServer server) {
         ServerLevel overworld = server.overworld();
-        if (overworld == null) return;
 
-        // 毎tickだと重いので1秒に1回
         if (overworld.getGameTime() % 20 != 0) return;
 
         StudentWorldState state = StudentWorldState.get(server);
 
         for (StudentId sid : StudentId.values()) {
-            if (state.getPresence(sid) != StudentPresenceState.RESPAWNING) {
-                continue;
-            }
-
-            if (!state.isRespawnReady(sid, overworld)) {
-                continue;
-            }
+            if (state.getPresence(sid) != StudentPresenceState.RESPAWNING) continue;
+            if (!state.isRespawnReady(sid, overworld)) continue;
 
             StudentWorldState.StudentData data = state.getData(sid);
             if (data == null) continue;
@@ -49,12 +42,7 @@ public final class StudentRespawnManager {
             BlockPos spawn = findSafeRespawnPosNearBed(overworld, bed);
 
             AbstractStudentEntity spawned =
-                    DimensionTransferHelper.spawnPackedStudent(
-                            overworld,
-                            sid,
-                            spawn,
-                            0.0f
-                    );
+                    DimensionTransferHelper.spawnPackedStudent(overworld, sid, spawn, 0.0f);
 
             if (spawned == null) {
                 state.markMissing(sid, overworld);
@@ -103,8 +91,6 @@ public final class StudentRespawnManager {
         if (!world.getFluidState(below).isEmpty()) return false;
 
         if (!world.getBlockState(pos).getCollisionShape(world, pos).isEmpty()) return false;
-        if (!world.getBlockState(pos.above()).getCollisionShape(world, pos.above()).isEmpty()) return false;
-
-        return true;
+        return world.getBlockState(pos.above()).getCollisionShape(world, pos.above()).isEmpty();
     }
 }

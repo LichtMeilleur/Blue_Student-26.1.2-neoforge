@@ -18,7 +18,8 @@ import com.licht_meilleur.blue_student.state.StudentWorldState;
 import com.licht_meilleur.blue_student.student.*;
 import com.licht_meilleur.blue_student.weapon.WeaponSpec;
 import com.licht_meilleur.blue_student.weapon.WeaponSpecs;
-import net.fabricmc.fabric.api.menu.v1.ExtendedMenuProvider;
+import net.minecraft.world.SimpleMenuProvider;
+import net.neoforged.neoforge.network.IContainerFactory;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -426,22 +427,13 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
 
         final var self = this;
 
-        serverPlayer.openMenu(new ExtendedMenuProvider<StudentMenuData>() {
-            @Override
-            public StudentMenuData getScreenOpeningData(ServerPlayer player) {
-                return new StudentMenuData(self.getId());
-            }
-
-            @Override
-            public Component getDisplayName() {
-                return self.getDisplayName();
-            }
-
-            @Override
-            public AbstractContainerMenu createMenu(int syncId, Inventory inv, Player player) {
-                return new StudentScreenHandler(syncId, inv, self);
-            }
-        });
+        serverPlayer.openMenu(
+                new SimpleMenuProvider(
+                        (syncId, inv, p) ->
+                                new StudentScreenHandler(syncId, inv, self),
+                        self.getDisplayName()
+                )
+        );
     }
 
     protected double getSleepForwardOffset() {

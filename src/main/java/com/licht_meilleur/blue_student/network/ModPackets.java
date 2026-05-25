@@ -17,15 +17,12 @@ import com.licht_meilleur.blue_student.student.IStudentEntity;
 import com.licht_meilleur.blue_student.student.StudentAiMode;
 import com.licht_meilleur.blue_student.student.StudentId;
 import com.licht_meilleur.blue_student.util.DimensionTransferHelper;
-import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
@@ -39,6 +36,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
+import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
 import java.util.List;
 import java.util.UUID;
@@ -167,253 +167,235 @@ public final class ModPackets {
         }
     }
 
-    public static void registerPayloads() {
-        PayloadTypeRegistry.serverboundPlay().register(SetAiModePayload.TYPE, SetAiModePayload.CODEC);
-        PayloadTypeRegistry.serverboundPlay().register(CallStudentPayload.TYPE, CallStudentPayload.CODEC);
-        PayloadTypeRegistry.serverboundPlay().register(CallBackStudentPayload.TYPE, CallBackStudentPayload.CODEC);
-        PayloadTypeRegistry.serverboundPlay().register(CraftChamberCraftPayload.TYPE, CraftChamberCraftPayload.CODEC);
+    public static void register(RegisterPayloadHandlersEvent event) {
+        PayloadRegistrar registrar = event.registrar(BlueStudentMod.MOD_ID).versioned("1");
 
-        PayloadTypeRegistry.clientboundPlay().register(ShotFxPayload.TYPE, ShotFxPayload.CODEC);
+        registrar.playToServer(SetAiModePayload.TYPE, SetAiModePayload.CODEC, ModPackets::handleSetAiMode);
+        registrar.playToServer(CallStudentPayload.TYPE, CallStudentPayload.CODEC, ModPackets::handleCallStudent);
+        registrar.playToServer(CallBackStudentPayload.TYPE, CallBackStudentPayload.CODEC, ModPackets::handleCallBackStudent);
+        registrar.playToServer(CraftChamberCraftPayload.TYPE, CraftChamberCraftPayload.CODEC, ModPackets::handleCraftChamberCraft);
+
+        // TODO: NeoForgeクライアント側 ShotFx handler を後で接続する
+        registrar.playToClient(ShotFxPayload.TYPE, ShotFxPayload.CODEC, ModPackets::handleShotFxClient);
     }
 
-    public static void registerC2S() {
-        ServerPlayNetworking.registerGlobalReceiver(SetAiModePayload.TYPE, (payload, context) -> {
-            ServerPlayer player = context.player();
+    private static void handleSetAiMode(SetAiModePayload payload, IPayloadContext context) {
+        if (!(context.player() instanceof ServerPlayer player)) return;
 
-            context.server().execute(() -> {
-                var raw = player.level().getEntity(payload.entityId());
-                if (!(raw instanceof AbstractStudentEntity student)) {
-                    return;
-                }
+        context.enqueueWork(() -> {
+            var raw = player.level().getEntity(payload.entityId());
+            if (!(raw instanceof AbstractStudentEntity student)) return;
 
-                UUID owner = student.getOwnerUuid();
-                if (owner == null || !owner.equals(player.getUUID())) {
-                    return;
-                }
+            UUID owner = student.getOwnerUuid();
+            if (owner == null || !owner.equals(player.getUUID())) return;
 
-                StudentAiMode mode = StudentAiMode.fromId(payload.modeId());
-                if (mode == null) {
-                    return;
-                }
+            StudentAiMode mode = StudentAiMode.fromId(payload.modeId());
+            if (mode == null) return;
 
-                student.setAiMode(mode);
-            });
+            student.setAiMode(mode);
         });
+    }
 
-        ServerPlayNetworking.registerGlobalReceiver(CallStudentPayload.TYPE, (payload, context) -> {
-            ServerPlayer player = context.player();
-            MinecraftServer server = context.server();
+    private static void handleCallStudent(CallStudentPayload payload, IPayloadContext context) {
+        if (!(context.player() instanceof ServerPlayer player)) return;
 
-            server.execute(() -> {
-                try {
-                    ServerLevel level = (ServerLevel) player.level();
-                    StudentWorldState state = StudentWorldState.get(level);
-
-                    StudentId sid = parseStudentId(payload.studentId());
-                    BlockPos tabletPos = payload.tabletPos();
-
-                    if (state.hasStudent(sid)) {
-                        player.sendSystemMessage(Component.literal("Already summoned"));
-                        return;
-                    }
-
-                    if (!player.getAbilities().instabuild) {
-                        int ticketCount = countItem(player, BlueStudentMod.TICKET);
-                        int diamondCount = countItem(player, Items.DIAMOND);
-
-                        if (ticketCount < 1 && diamondCount < COST_DIAMOND) {
-                            player.sendSystemMessage(Component.literal(
-                                    "Not enough cost. Need 1 Ticket or " + COST_DIAMOND + " Diamonds."
-                            ));
-                            return;
-                        }
-                    }
-
-                    Entity raw = switch (sid) {
-                        case SHIROKO -> new ShirokoEntity(BlueStudentMod.SHIROKO, level);
-                        case HOSHINO -> new HoshinoEntity(BlueStudentMod.HOSHINO, level);
-                        case HINA -> new HinaEntity(BlueStudentMod.HINA, level);
-                        case ALICE -> new AliceEntity(BlueStudentMod.ALICE, level);
-                        case KISAKI -> new KisakiEntity(BlueStudentMod.KISAKI, level);
-                        case MARIE -> new MarieEntity(BlueStudentMod.MARIE, level);
-                        case HIKARI -> new HikariEntity(BlueStudentMod.HIKARI, level);
-                        case NOZOMI -> new NozomiEntity(BlueStudentMod.NOZOMI, level);
-                    };
-
-                    if (!(raw instanceof IStudentEntity se)) {
-                        player.sendSystemMessage(Component.literal("Spawn failed (type mismatch)"));
-                        return;
-                    }
-
-                    BlockPos spawn = tabletPos.above();
-
-                    raw.setPos(spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5);
-                    raw.setYRot(player.getYRot());
-                    raw.setXRot(0.0f);
-
-                    UUID owner = player.getUUID();
-                    se.setOwnerUuid(owner);
-
-                    boolean ok = level.addFreshEntity(raw);
-                    if (!ok) {
-                        player.sendSystemMessage(Component.literal("Spawn failed"));
-                        return;
-                    }
-
-                    if (!consumeSummonCost(player)) {
-                        player.sendSystemMessage(Component.literal(
-                                "Not enough cost. Need 1 Ticket (preferred) or 64 Diamonds."
-                        ));
-                        return;
-                    }
-
-                    state.setStudent(sid, raw.getUUID(), owner, level, spawn);
-                    player.sendSystemMessage(Component.literal("Summoned"));
-
-                } catch (Throwable t) {
-                    BlueStudentMod.LOGGER.error("[BlueStudent] CALL crashed", t);
-                    player.sendSystemMessage(Component.literal("CALL crashed. See log."));
-                }
-            });
-
-        });
-
-        ServerPlayNetworking.registerGlobalReceiver(CallBackStudentPayload.TYPE, (payload, context) -> {
-            ServerPlayer player = context.player();
-            MinecraftServer server = context.server();
-
-            server.execute(() -> {
-                ServerLevel level = (ServerLevel) player.level();
+        context.enqueueWork(() -> {
+            try {
+                ServerLevel level = player.level();
                 StudentWorldState state = StudentWorldState.get(level);
 
                 StudentId sid = parseStudentId(payload.studentId());
-                StudentWorldState.StudentData data = state.getData(sid);
-                if (data == null) return;
+                BlockPos tabletPos = payload.tabletPos();
 
-                BlockPos spawn = payload.tabletPos().above();
+                if (state.hasStudent(sid)) {
+                    player.sendSystemMessage(Component.literal("Already summoned"));
+                    return;
+                }
 
-                // =========================
-                // ① 同ディメンション
-                // =========================
-                if (data.uuid != null) {
-                    Entity found = level.getEntity(data.uuid);
-                    if (found instanceof AbstractStudentEntity student && student.isAlive()) {
+                if (!player.getAbilities().instabuild) {
+                    int ticketCount = countItem(player, BlueStudentMod.TICKET.get());
+                    int diamondCount = countItem(player, Items.DIAMOND);
 
+                    if (ticketCount < 1 && diamondCount < COST_DIAMOND) {
+                        player.sendSystemMessage(Component.literal(
+                                "Not enough cost. Need 1 Ticket or " + COST_DIAMOND + " Diamonds."
+                        ));
+                        return;
+                    }
+                }
+
+                Entity raw = switch (sid) {
+                    case SHIROKO -> new ShirokoEntity(BlueStudentMod.SHIROKO.get(), level);
+                    case HOSHINO -> new HoshinoEntity(BlueStudentMod.HOSHINO.get(), level);
+                    case HINA -> new HinaEntity(BlueStudentMod.HINA.get(), level);
+                    case ALICE -> new AliceEntity(BlueStudentMod.ALICE.get(), level);
+                    case KISAKI -> new KisakiEntity(BlueStudentMod.KISAKI.get(), level);
+                    case MARIE -> new MarieEntity(BlueStudentMod.MARIE.get(), level);
+                    case HIKARI -> new HikariEntity(BlueStudentMod.HIKARI.get(), level);
+                    case NOZOMI -> new NozomiEntity(BlueStudentMod.NOZOMI.get(), level);
+                };
+
+                if (!(raw instanceof IStudentEntity se)) {
+                    player.sendSystemMessage(Component.literal("Spawn failed (type mismatch)"));
+                    return;
+                }
+
+                BlockPos spawn = tabletPos.above();
+
+                raw.setPos(spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5);
+                raw.setYRot(player.getYRot());
+                raw.setXRot(0.0f);
+
+                UUID owner = player.getUUID();
+                se.setOwnerUuid(owner);
+
+                boolean ok = level.addFreshEntity(raw);
+                if (!ok) {
+                    player.sendSystemMessage(Component.literal("Spawn failed"));
+                    return;
+                }
+
+                if (!consumeSummonCost(player)) {
+                    player.sendSystemMessage(Component.literal(
+                            "Not enough cost. Need 1 Ticket (preferred) or 64 Diamonds."
+                    ));
+                    return;
+                }
+
+                state.setStudent(sid, raw.getUUID(), owner, level, spawn);
+                player.sendSystemMessage(Component.literal("Summoned"));
+
+            } catch (Throwable t) {
+                BlueStudentMod.LOGGER.error("[BlueStudent] CALL crashed", t);
+                player.sendSystemMessage(Component.literal("CALL crashed. See log."));
+            }
+        });
+    }
+
+    private static void handleCallBackStudent(CallBackStudentPayload payload, IPayloadContext context) {
+        if (!(context.player() instanceof ServerPlayer player)) return;
+
+        context.enqueueWork(() -> {
+            MinecraftServer server = player.level().getServer();
+            if (server == null) return;
+
+            ServerLevel level = player.level();
+            StudentWorldState state = StudentWorldState.get(level);
+
+            StudentId sid = parseStudentId(payload.studentId());
+            StudentWorldState.StudentData data = state.getData(sid);
+            if (data == null) return;
+
+            BlockPos spawn = payload.tabletPos().above();
+
+            if (data.uuid != null) {
+                Entity found = level.getEntity(data.uuid);
+                if (found instanceof AbstractStudentEntity student && student.isAlive()) {
+                    student.teleportToWorldForCallback(level, spawn, player.getYRot());
+                    state.setStudent(sid, student.getUUID(), player.getUUID(), level, spawn);
+                    return;
+                }
+            }
+
+            if (data.dimension != null && data.uuid != null) {
+                ServerLevel oldLevel = server.getLevel(
+                        ResourceKey.create(Registries.DIMENSION, Identifier.parse(data.dimension))
+                );
+
+                if (oldLevel != null) {
+                    Entity other = oldLevel.getEntity(data.uuid);
+
+                    if (other instanceof AbstractStudentEntity student && student.isAlive()) {
                         student.teleportToWorldForCallback(level, spawn, player.getYRot());
                         state.setStudent(sid, student.getUUID(), player.getUUID(), level, spawn);
                         return;
                     }
                 }
+            }
 
-                // =========================
-                // ② 記録ディメンション
-                // =========================
-                if (data.dimension != null && data.uuid != null) {
-                    ServerLevel oldLevel = server.getLevel(
-                            ResourceKey.create(Registries.DIMENSION, Identifier.parse(data.dimension))
-                    );
+            AbstractStudentEntity spawned =
+                    DimensionTransferHelper.spawnPackedStudent(level, sid, spawn, player.getYRot());
 
-                    if (oldLevel != null) {
-                        Entity other = oldLevel.getEntity(data.uuid);
+            if (spawned != null) return;
 
-                        if (other instanceof AbstractStudentEntity student && student.isAlive()) {
+            AbstractStudentEntity fallback = DimensionTransferHelper.createStudent(sid, level);
+            if (fallback == null) return;
 
-                            student.teleportToWorldForCallback(level, spawn, player.getYRot());
-                            state.setStudent(sid, student.getUUID(), player.getUUID(), level, spawn);
-                            return;
-                        }
-                    }
-                }
+            fallback.setPos(spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5);
+            fallback.setOwnerUuid(player.getUUID());
 
-                // =========================
-                // ③ packed復元
-                // =========================
-                AbstractStudentEntity spawned =
-                        DimensionTransferHelper.spawnPackedStudent(level, sid, spawn, player.getYRot());
+            level.addFreshEntity(fallback);
+            state.setStudent(sid, fallback.getUUID(), player.getUUID(), level, spawn);
+        });
+    }
 
-                if (spawned != null) {
+    private static void handleCraftChamberCraft(CraftChamberCraftPayload payload, IPayloadContext context) {
+        if (!(context.player() instanceof ServerPlayer player)) return;
+
+        context.enqueueWork(() -> {
+            try {
+                ServerLevel level = player.level();
+                BlockPos chamberPos = payload.chamberPos();
+
+                if (player.distanceToSqr(
+                        chamberPos.getX() + 0.5,
+                        chamberPos.getY() + 0.5,
+                        chamberPos.getZ() + 0.5
+                ) > 64) {
                     return;
                 }
 
-                // =========================
-                // ④ 最終 fallback（新規生成）
-                // =========================
-                AbstractStudentEntity fallback = DimensionTransferHelper.createStudent(sid, level);
-                if (fallback == null) return;
+                var be = level.getBlockEntity(chamberPos);
+                if (!(be instanceof CraftChamberBlockEntity)) return;
 
-                fallback.setPos(spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5);
-                fallback.setOwnerUuid(player.getUUID());
+                var recipe = CraftChamberRecipes.byIndex(payload.pageIndex());
+                boolean creative = player.getAbilities().instabuild;
 
-                level.addFreshEntity(fallback);
-                state.setStudent(sid, fallback.getUUID(), player.getUUID(), level, spawn);
-            });
-        });
-
-        ServerPlayNetworking.registerGlobalReceiver(CraftChamberCraftPayload.TYPE, (payload, context) -> {
-            ServerPlayer player = context.player();
-            MinecraftServer server = context.server();
-
-            server.execute(() -> {
-                try {
-                    ServerLevel level = (ServerLevel) player.level();
-                    BlockPos chamberPos = payload.chamberPos();
-
-                    if (player.distanceToSqr(
-                            chamberPos.getX() + 0.5,
-                            chamberPos.getY() + 0.5,
-                            chamberPos.getZ() + 0.5
-                    ) > 64) {
-                        return;
-                    }
-
-                    var be = level.getBlockEntity(chamberPos);
-                    if (!(be instanceof CraftChamberBlockEntity)) {
-                        return;
-                    }
-
-                    var recipe = CraftChamberRecipes.byIndex(payload.pageIndex());
-                    boolean creative = player.getAbilities().instabuild;
-
-                    if (!creative) {
-                        for (var cost : recipe.costs()) {
-                            if (countItem(player, cost.item()) < cost.count()) {
-                                player.sendSystemMessage(Component.literal("Not enough materials"));
-                                return;
-                            }
-                        }
-
-                        for (var cost : recipe.costs()) {
-                            removeItem(player, cost.item(), cost.count());
+                if (!creative) {
+                    for (var cost : recipe.costs()) {
+                        if (countItem(player, cost.item()) < cost.count()) {
+                            player.sendSystemMessage(Component.literal("Not enough materials"));
+                            return;
                         }
                     }
 
-                    ItemStack out = recipe.output().copy();
-
-                    ItemEntity drop = new ItemEntity(
-                            level,
-                            chamberPos.getX() + 0.5,
-                            chamberPos.getY() + 1.1,
-                            chamberPos.getZ() + 0.5,
-                            out
-                    );
-                    drop.setDefaultPickUpDelay();
-                    drop.setDeltaMovement(0, 0.20, 0);
-                    level.addFreshEntity(drop);
-
-                    level.playSound(
-                            null,
-                            chamberPos,
-                            net.minecraft.sounds.SoundEvents.ANVIL_USE,
-                            net.minecraft.sounds.SoundSource.BLOCKS,
-                            0.6f,
-                            1.2f
-                    );
-
-                } catch (Throwable t) {
-                    BlueStudentMod.LOGGER.error("[BlueStudent] CRAFT_CHAMBER_CRAFT crashed", t);
-                    player.sendSystemMessage(Component.literal("Craft failed. See log."));
+                    for (var cost : recipe.costs()) {
+                        removeItem(player, cost.item(), cost.count());
+                    }
                 }
-            });
+
+                ItemStack out = recipe.output().copy();
+
+                ItemEntity drop = new ItemEntity(
+                        level,
+                        chamberPos.getX() + 0.5,
+                        chamberPos.getY() + 1.1,
+                        chamberPos.getZ() + 0.5,
+                        out
+                );
+                drop.setDefaultPickUpDelay();
+                drop.setDeltaMovement(0, 0.20, 0);
+                level.addFreshEntity(drop);
+
+                level.playSound(
+                        null,
+                        chamberPos,
+                        net.minecraft.sounds.SoundEvents.ANVIL_USE,
+                        net.minecraft.sounds.SoundSource.BLOCKS,
+                        0.6f,
+                        1.2f
+                );
+
+            } catch (Throwable t) {
+                BlueStudentMod.LOGGER.error("[BlueStudent] CRAFT_CHAMBER_CRAFT crashed", t);
+                player.sendSystemMessage(Component.literal("Craft failed. See log."));
+            }
+        });
+    }
+
+    private static void handleShotFxClient(ShotFxPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            // TODO: クライアント側ShotFx描画処理をNeoForge用に接続
         });
     }
 
@@ -450,10 +432,7 @@ public final class ModPackets {
     private static boolean consumeSummonCost(ServerPlayer player) {
         if (player.isCreative()) return true;
 
-        if (consumeCount(player, BlueStudentMod.TICKET, 1)) {
-            return true;
-        }
-
+        if (consumeCount(player, BlueStudentMod.TICKET.get(), 1)) return true;
         return consumeCount(player, Items.DIAMOND, COST_DIAMOND);
     }
 
@@ -482,29 +461,5 @@ public final class ModPackets {
 
         player.containerMenu.broadcastChanges();
         return true;
-    }
-
-    public record CraftChamberPayload(String pos, int page)
-            implements CustomPacketPayload {
-
-        public static final CustomPacketPayload.Type<CraftChamberPayload> TYPE =
-                new CustomPacketPayload.Type<>(BlueStudentMod.id("craft_chamber"));
-
-        public static final StreamCodec<FriendlyByteBuf, CraftChamberPayload> CODEC =
-                StreamCodec.of(
-                        (buf, p) -> {
-                            buf.writeUtf(p.pos());
-                            buf.writeInt(p.page());
-                        },
-                        buf -> new CraftChamberPayload(
-                                buf.readUtf(),
-                                buf.readInt()
-                        )
-                );
-
-        @Override
-        public Type<? extends CustomPacketPayload> type() {
-            return TYPE;
-        }
     }
 }

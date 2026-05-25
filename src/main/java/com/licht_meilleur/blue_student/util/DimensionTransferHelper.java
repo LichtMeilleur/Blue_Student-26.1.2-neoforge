@@ -154,14 +154,14 @@ public final class DimensionTransferHelper {
     @Nullable
     public static AbstractStudentEntity createStudent(StudentId id, ServerLevel dest) {
         Entity raw = switch (id) {
-            case SHIROKO -> BlueStudentMod.SHIROKO.create(dest, EntitySpawnReason.LOAD);
-            case HOSHINO -> BlueStudentMod.HOSHINO.create(dest, EntitySpawnReason.LOAD);
-            case HINA -> BlueStudentMod.HINA.create(dest, EntitySpawnReason.LOAD);
-            case ALICE -> BlueStudentMod.ALICE.create(dest, EntitySpawnReason.LOAD);
-            case KISAKI -> BlueStudentMod.KISAKI.create(dest, EntitySpawnReason.LOAD);
-            case MARIE -> BlueStudentMod.MARIE.create(dest, EntitySpawnReason.LOAD);
-            case HIKARI -> BlueStudentMod.HIKARI.create(dest, EntitySpawnReason.LOAD);
-            case NOZOMI -> BlueStudentMod.NOZOMI.create(dest, EntitySpawnReason.LOAD);
+            case SHIROKO -> BlueStudentMod.SHIROKO.get().create(dest, EntitySpawnReason.LOAD);
+            case HOSHINO -> BlueStudentMod.HOSHINO.get().create(dest, EntitySpawnReason.LOAD);
+            case HINA -> BlueStudentMod.HINA.get().create(dest, EntitySpawnReason.LOAD);
+            case ALICE -> BlueStudentMod.ALICE.get().create(dest, EntitySpawnReason.LOAD);
+            case KISAKI -> BlueStudentMod.KISAKI.get().create(dest, EntitySpawnReason.LOAD);
+            case MARIE -> BlueStudentMod.MARIE.get().create(dest, EntitySpawnReason.LOAD);
+            case HIKARI -> BlueStudentMod.HIKARI.get().create(dest, EntitySpawnReason.LOAD);
+            case NOZOMI -> BlueStudentMod.NOZOMI.get().create(dest, EntitySpawnReason.LOAD);
         };
 
         return raw instanceof AbstractStudentEntity ase ? ase : null;

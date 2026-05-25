@@ -31,7 +31,7 @@ public class OnlyBedBlockEntity extends BlockEntity implements GeoBlockEntity {
     private boolean sleepAnim = false;
 
     public OnlyBedBlockEntity(BlockPos pos, BlockState state) {
-        super(BlueStudentMod.ONLY_BED_BE, pos, state);
+        super(BlueStudentMod.ONLY_BED_BE.get(), pos, state);
     }
 
     public boolean isSleepAnim() {

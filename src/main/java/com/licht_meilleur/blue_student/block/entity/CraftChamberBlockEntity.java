@@ -26,7 +26,7 @@ public class CraftChamberBlockEntity extends BlockEntity implements GeoBlockEnti
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
     public CraftChamberBlockEntity(BlockPos pos, BlockState state) {
-        super(BlueStudentMod.CRAFT_CHAMBER_BE, pos, state);
+        super(BlueStudentMod.CRAFT_CHAMBER_BE.get(), pos, state);
     }
 
     @Override

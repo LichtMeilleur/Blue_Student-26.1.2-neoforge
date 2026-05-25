@@ -2,8 +2,6 @@ package com.licht_meilleur.blue_student.block;
 
 import com.licht_meilleur.blue_student.BlueStudentMod;
 import com.licht_meilleur.blue_student.block.entity.CraftChamberBlockEntity;
-import com.licht_meilleur.blue_student.inventory.CraftChamberMenuData;
-import net.fabricmc.fabric.api.menu.v1.ExtendedMenuProvider;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
@@ -83,7 +81,7 @@ public class CraftChamberBlock extends Block implements EntityBlock {
         BlockState otherState = level.getBlockState(otherPos);
 
         if (!level.isClientSide()) {
-            popResource(level, basePos, new ItemStack(BlueStudentMod.CRAFT_CHAMBER_ITEM));
+            popResource(level, basePos, new ItemStack(BlueStudentMod.CRAFT_CHAMBER_ITEM.get()));
 
             if (otherState.is(this) && otherState.getValue(HALF) != half) {
                 level.setBlock(otherPos, Blocks.AIR.defaultBlockState(), 3);
@@ -133,22 +131,10 @@ public class CraftChamberBlock extends Block implements EntityBlock {
             return InteractionResult.PASS;
         }
 
-        serverPlayer.openMenu(new ExtendedMenuProvider<CraftChamberMenuData>() {
-            @Override
-            public CraftChamberMenuData getScreenOpeningData(ServerPlayer player) {
-                return new CraftChamberMenuData(basePos);
-            }
-
-            @Override
-            public Component getDisplayName() {
-                return chamber.getDisplayName();
-            }
-
-            @Override
-            public AbstractContainerMenu createMenu(int syncId, Inventory inv, Player player) {
-                return chamber.createMenu(syncId, inv, player);
-            }
-        });
+        serverPlayer.openMenu(
+                chamber,
+                buf -> buf.writeBlockPos(basePos)
+        );
 
         return InteractionResult.CONSUME;
     }

@@ -63,7 +63,7 @@ public class ShirokoDroneEntity extends Entity implements GeoEntity {
     }
 
     public ShirokoDroneEntity(Level level) {
-        this(BlueStudentMod.SHIROKO_DRONE, level);
+        this(BlueStudentMod.SHIROKO_DRONE.get(), level);
     }
 
     public ShirokoDroneEntity setOwnerUuid(UUID owner) {

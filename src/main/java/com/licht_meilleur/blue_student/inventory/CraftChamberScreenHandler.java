@@ -14,7 +14,7 @@ public class CraftChamberScreenHandler extends AbstractContainerMenu {
     private final CraftChamberBlockEntity be; // client側はnull許容
 
     public CraftChamberScreenHandler(int syncId, Inventory inv, CraftChamberBlockEntity be, BlockPos pos) {
-        super(ModScreenHandlers.CRAFT_CHAMBER_MENU, syncId);
+        super(ModScreenHandlers.CRAFT_CHAMBER_MENU.get(), syncId);
         this.be = be;
         this.pos = pos;
     }

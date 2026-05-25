@@ -1,10 +1,10 @@
 package com.licht_meilleur.blue_student.network;
 
 import com.licht_meilleur.blue_student.weapon.WeaponSpec;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 public final class ServerFx {
     private ServerFx() {
@@ -32,7 +32,7 @@ public final class ServerFx {
         );
 
         for (ServerPlayer player : level.players()) {
-            ServerPlayNetworking.send(player, payload);
+            PacketDistributor.sendToPlayer(player, payload);
         }
     }
 
@@ -43,6 +43,14 @@ public final class ServerFx {
                                   float fxWidth,
                                   Vec3 dir,
                                   float travelDist) {
-        sendShotFx(level, shooterEntityId, start, fxType, fxWidth, new Vec3[]{dir}, travelDist);
+        sendShotFx(
+                level,
+                shooterEntityId,
+                start,
+                fxType,
+                fxWidth,
+                new Vec3[]{dir},
+                travelDist
+        );
     }
 }

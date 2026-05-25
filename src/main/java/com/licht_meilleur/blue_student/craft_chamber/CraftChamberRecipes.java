@@ -13,7 +13,7 @@ public final class CraftChamberRecipes {
     public static final List<CraftChamberRecipe> ALL = List.of(
             new CraftChamberRecipe(
                     BlueStudentMod.id("hoshino_br_equip"),
-                    new ItemStack(BlueStudentMod.HOSHINO_BR_EQUIP_ITEM, 1),
+                    new ItemStack(BlueStudentMod.HOSHINO_BR_EQUIP_ITEM.get(), 1),
                     List.of(
                             new IngredientStack(Items.NETHERITE_INGOT, 5),
                             new IngredientStack(Items.LEATHER, 6),
@@ -27,7 +27,7 @@ public final class CraftChamberRecipes {
             ),
             new CraftChamberRecipe(
                     BlueStudentMod.id("alice_br_equip"),
-                    new ItemStack(BlueStudentMod.ALICE_BR_EQUIP_ITEM, 1),
+                    new ItemStack(BlueStudentMod.ALICE_BR_EQUIP_ITEM.get(), 1),
                     List.of(
                             new IngredientStack(Items.NETHERITE_INGOT, 5),
                             new IngredientStack(Items.AMETHYST_SHARD, 2),

@@ -20,7 +20,7 @@ public class TabletBlockEntity extends BlockEntity implements GeoBlockEntity {
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
     public TabletBlockEntity(BlockPos pos, BlockState state) {
-        super(BlueStudentMod.TABLET_BE, pos, state);
+        super(BlueStudentMod.TABLET_BE.get(), pos, state);
     }
 
     @Override
