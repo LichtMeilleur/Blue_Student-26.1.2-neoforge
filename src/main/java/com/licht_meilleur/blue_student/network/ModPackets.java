@@ -175,8 +175,7 @@ public final class ModPackets {
         registrar.playToServer(CallBackStudentPayload.TYPE, CallBackStudentPayload.CODEC, ModPackets::handleCallBackStudent);
         registrar.playToServer(CraftChamberCraftPayload.TYPE, CraftChamberCraftPayload.CODEC, ModPackets::handleCraftChamberCraft);
 
-        // TODO: NeoForgeクライアント側 ShotFx handler を後で接続する
-        registrar.playToClient(ShotFxPayload.TYPE, ShotFxPayload.CODEC, ModPackets::handleShotFxClient);
+
     }
 
     private static void handleSetAiMode(SetAiModePayload payload, IPayloadContext context) {
@@ -393,11 +392,6 @@ public final class ModPackets {
         });
     }
 
-    private static void handleShotFxClient(ShotFxPayload payload, IPayloadContext context) {
-        context.enqueueWork(() -> {
-            // TODO: クライアント側ShotFx描画処理をNeoForge用に接続
-        });
-    }
 
     private static StudentId parseStudentId(String s) {
         for (StudentId id : StudentId.values()) {

@@ -21,6 +21,17 @@ sourceSets.main.resources {
     exclude("src/generated/**/.cache") // datagen cache files
 }
 
+sourceSets {
+    main {
+        java {
+            srcDir 'src/client/java'
+        }
+        resources {
+            srcDir 'src/client/resources'
+        }
+    }
+}
+
 repositories {
     maven {
         url = "https://cursemaven.com"

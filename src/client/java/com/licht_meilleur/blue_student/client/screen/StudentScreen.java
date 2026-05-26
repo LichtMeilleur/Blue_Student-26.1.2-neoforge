@@ -6,7 +6,7 @@ import com.licht_meilleur.blue_student.network.ModPackets;
 import com.licht_meilleur.blue_student.student.IStudentEntity;
 import com.licht_meilleur.blue_student.student.StudentAiMode;
 import com.licht_meilleur.blue_student.student.StudentId;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.StringWidget;
@@ -230,7 +230,9 @@ public class StudentScreen extends AbstractContainerScreen<StudentScreenHandler>
             return;
         }
 
-        ClientPlayNetworking.send(new ModPackets.SetAiModePayload(entity.getId(), modeId));
+        Minecraft.getInstance().getConnection().send(
+                new ModPackets.SetAiModePayload(entity.getId(), modeId)
+        );
     }
 
     @Override

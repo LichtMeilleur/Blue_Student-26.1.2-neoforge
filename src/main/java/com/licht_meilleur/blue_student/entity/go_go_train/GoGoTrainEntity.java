@@ -366,7 +366,7 @@ public class GoGoTrainEntity extends Entity implements GeoEntity {
     }
 
     private void spawnShell(ServerLevel serverLevel, LivingEntity target, Vec3 start, Vec3 dir, int curveSign) {
-        GunTrainShellEntity shell = new GunTrainShellEntity(ModEntities.GUN_TRAIN_SHELL, serverLevel)
+        GunTrainShellEntity shell = new GunTrainShellEntity(ModEntities.GUN_TRAIN_SHELL.get(), serverLevel)
                 .setOwnerUuid(ownerPlayerUuid)
                 .setTarget(target)
                 .setCurveSign(curveSign);

@@ -4,7 +4,7 @@ import com.licht_meilleur.blue_student.BlueStudentMod;
 import com.licht_meilleur.blue_student.network.ModPackets;
 import com.licht_meilleur.blue_student.student.StudentAiMode;
 import com.licht_meilleur.blue_student.student.StudentId;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.StringWidget;
@@ -237,16 +237,20 @@ public class TabletStudentScreen extends Screen {
     }
 
     private void sendCall() {
-        ClientPlayNetworking.send(new ModPackets.CallStudentPayload(
-                this.sid.asString(),
-                this.tabletPos
-        ));
+        Minecraft.getInstance().getConnection().send(
+                new ModPackets.CallStudentPayload(
+                        this.sid.asString(),
+                        this.tabletPos
+                )
+        );
     }
 
     private void sendCallBack() {
-        ClientPlayNetworking.send(new ModPackets.CallBackStudentPayload(
-                this.sid.asString(),
-                this.tabletPos
-        ));
+        Minecraft.getInstance().getConnection().send(
+                new ModPackets.CallBackStudentPayload(
+                        this.sid.asString(),
+                        this.tabletPos
+                )
+        );
     }
 }

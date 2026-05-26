@@ -47,7 +47,7 @@ public class HyperCannonEntity extends Entity {
     }
 
     public HyperCannonEntity(Level level) {
-        this(ModEntities.HYPER_CANNON, level);
+        this(ModEntities.HYPER_CANNON.get(), level);
     }
 
     public void init(LivingEntity owner, LivingEntity target, Side side) {

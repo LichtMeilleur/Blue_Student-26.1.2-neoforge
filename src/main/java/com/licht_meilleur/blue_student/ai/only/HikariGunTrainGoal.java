@@ -104,7 +104,7 @@ public class HikariGunTrainGoal extends Goal {
         if (gun == null || !gun.isAlive()) {
             gun = findGun(sw, ownerP);
             if (gun == null) {
-                gun = new GunTrainEntity(ModEntities.GUN_TRAIN, sw);
+                gun = new GunTrainEntity(ModEntities.GUN_TRAIN.get(), sw);
                 gun.setOwnerPlayerUuid(ownerP);
                 gun.setPassengerStudentUuid(hikari.getUUID());
                 gun.setMergedMode(false);

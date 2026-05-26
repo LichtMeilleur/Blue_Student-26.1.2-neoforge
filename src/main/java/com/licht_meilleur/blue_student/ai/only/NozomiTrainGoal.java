@@ -101,7 +101,7 @@ public class NozomiTrainGoal extends Goal {
         if (train == null || !train.isAlive()) {
             train = findTrain(serverLevel, ownerP);
             if (train == null) {
-                train = new TrainEntity(ModEntities.TRAIN, serverLevel)
+                train = new TrainEntity(ModEntities.TRAIN.get(), serverLevel)
                         .setOwnerPlayerUuid(ownerP);
                 train.setPos(nozomi.getX(), nozomi.getY(), nozomi.getZ());
                 serverLevel.addFreshEntity(train);

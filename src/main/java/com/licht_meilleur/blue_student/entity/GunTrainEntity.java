@@ -256,7 +256,7 @@ public class GunTrainEntity extends Entity implements GeoEntity {
 
     private void spawnShell(ServerLevel sw, LivingEntity target, Vec3 start, Vec3 dir, int curveSign) {
         GunTrainShellEntity shell = new GunTrainShellEntity(
-                com.licht_meilleur.blue_student.registry.ModEntities.GUN_TRAIN_SHELL,
+                com.licht_meilleur.blue_student.registry.ModEntities.GUN_TRAIN_SHELL.get(),
                 sw
         ).setOwnerUuid(ownerPlayerUuid)
                 .setTarget(target)

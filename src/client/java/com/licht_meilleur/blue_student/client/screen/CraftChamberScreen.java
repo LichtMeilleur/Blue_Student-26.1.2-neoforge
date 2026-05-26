@@ -6,8 +6,7 @@ import com.licht_meilleur.blue_student.craft_chamber.CraftChamberRecipe;
 import com.licht_meilleur.blue_student.craft_chamber.CraftChamberRecipes;
 import com.licht_meilleur.blue_student.craft_chamber.IngredientStack;
 import com.licht_meilleur.blue_student.inventory.CraftChamberScreenHandler;
-import com.licht_meilleur.blue_student.network.ModPackets;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -63,11 +62,9 @@ public class CraftChamberScreen extends AbstractContainerScreen<CraftChamberScre
 
         this.addRenderableWidget(
                 Button.builder(Component.literal("Craft"), _button ->
-                                ClientPlayNetworking.send(
-                                        new ModPackets.CraftChamberCraftPayload(
-                                                this.menu.getPos(),
-                                                this.pageIndex
-                                        )
+                                CraftChamberNetworking.sendCraftRequest(
+                                        this.menu.getPos(),
+                                        this.pageIndex
                                 ))
                         .bounds(this.leftPos + 12, this.topPos + 228, 60, 20)
                         .build()

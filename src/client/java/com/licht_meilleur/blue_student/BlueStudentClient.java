@@ -7,6 +7,8 @@ import com.licht_meilleur.blue_student.client.others.GunTrainRenderer;
 import com.licht_meilleur.blue_student.client.others.TrainRenderer;
 import com.licht_meilleur.blue_student.client.others.go_go_train.GoGoGunTrainRenderer;
 import com.licht_meilleur.blue_student.client.others.go_go_train.GoGoTrainRenderer;
+import com.licht_meilleur.blue_student.client.others.KisakiDragonRenderer;
+import com.licht_meilleur.blue_student.client.others.ShirokoDroneRenderer;
 import com.licht_meilleur.blue_student.client.projectile.BulletRenderer;
 import com.licht_meilleur.blue_student.client.projectile.GunTrainShellRenderer;
 import com.licht_meilleur.blue_student.client.projectile.SonicBeamRenderer;
@@ -16,17 +18,24 @@ import com.licht_meilleur.blue_student.client.screen.TabletScreen;
 import com.licht_meilleur.blue_student.client.student_renderer.*;
 import com.licht_meilleur.blue_student.registry.ModEntities;
 import com.licht_meilleur.blue_student.registry.ModScreenHandlers;
-import net.neoforged.api.distmarker.Dist;
+import com.licht_meilleur.blue_student.client.network.ClientPackets;
+import com.licht_meilleur.blue_student.network.ModPackets;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+
 import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
+
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.fml.common.EventBusSubscriber;
+
+
 @EventBusSubscriber(
         modid = BlueStudentMod.MOD_ID,
-        bus = EventBusSubscriber.Bus.MOD,
         value = Dist.CLIENT
 )
+
 public final class BlueStudentClient {
 
     private BlueStudentClient() {
@@ -69,5 +78,18 @@ public final class BlueStudentClient {
         event.register(ModScreenHandlers.CRAFT_CHAMBER_MENU.get(), CraftChamberScreen::new);
 
         BlueStudentMod.OPEN_TABLET_SCREEN = TabletScreen::open;
+    }
+
+    @SubscribeEvent
+    public static void registerClientPayloads(RegisterPayloadHandlersEvent event) {
+        event.registrar(BlueStudentMod.MOD_ID).versioned("1")
+                .playToClient(
+                        ModPackets.ShotFxPayload.TYPE,
+                        ModPackets.ShotFxPayload.CODEC,
+                        (payload, context) ->
+                                context.enqueueWork(() ->
+                                        ClientPackets.handleShotFx(payload)
+                                )
+                );
     }
 }

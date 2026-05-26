@@ -119,7 +119,7 @@ public class NozomiHikariMergeGoGoTrainGoal extends Goal {
         if (gogo == null) {
             Vec3 spawn = computeTrainSpawnPos(nozomi);
 
-            gogo = new GoGoTrainEntity(ModEntities.GO_GO_TRAIN, serverLevel)
+            gogo = new GoGoTrainEntity(ModEntities.GO_GO_TRAIN.get(), serverLevel)
                     .setOwnerPlayerUuid(ownerP)
                     .setNozomiPassengerUuid(nozomi.getUUID())
                     .setHikariPassengerUuid(hikari.getUUID())
@@ -137,7 +137,7 @@ public class NozomiHikariMergeGoGoTrainGoal extends Goal {
         if (gogoGun == null) {
             Vec3 gunSpawn = computeGunSpawnBehindTrain(gogo);
 
-            gogoGun = new GoGoGunTrainEntity(ModEntities.GO_GO_GUN_TRAIN, serverLevel)
+            gogoGun = new GoGoGunTrainEntity(ModEntities.GO_GO_GUN_TRAIN.get(), serverLevel)
                     .setOwnerPlayerUuid(ownerP)
                     .setTrainUuid(gogo.getUUID())
                     .setPassengerStudentUuid(hikari.getUUID())

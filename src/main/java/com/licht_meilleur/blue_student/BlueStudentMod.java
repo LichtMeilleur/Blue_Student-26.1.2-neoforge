@@ -11,6 +11,7 @@ import com.licht_meilleur.blue_student.entity.*;
 import com.licht_meilleur.blue_student.entity.projectile.StudentBulletEntity;
 import com.licht_meilleur.blue_student.loot.ModLoot;
 import com.licht_meilleur.blue_student.network.ModPackets;
+import com.licht_meilleur.blue_student.registry.ModEntities;
 import com.licht_meilleur.blue_student.registry.ModItemGroups;
 import com.licht_meilleur.blue_student.registry.ModScreenHandlers;
 import com.licht_meilleur.blue_student.state.StudentDimensionSyncManager;
@@ -257,9 +258,7 @@ public class BlueStudentMod {
         modBus.addListener(this::registerAttributes);
         modBus.addListener(ModPackets::register);
 
-        if (FMLEnvironment.dist == Dist.CLIENT) {
-            modBus.register(BlueStudentClient.class);
-        }
+        ModEntities.ENTITY_TYPES.register(modBus);
 
         ModLoot.init();
         ModScreenHandlers.MENUS.register(modBus);

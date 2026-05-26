@@ -432,7 +432,8 @@ public abstract class AbstractStudentEntity extends PathfinderMob implements ISt
                         (syncId, inv, p) ->
                                 new StudentScreenHandler(syncId, inv, self),
                         self.getDisplayName()
-                )
+                ),
+                buf -> StudentMenuData.STREAM_CODEC.encode(buf, new StudentMenuData(self.getId()))
         );
     }
 
